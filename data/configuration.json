@@ -26,7 +26,7 @@
       "sensor_type": "DHT11",
       "pin": 4,
       "enabled": true,
-      "read_interval": 30000
+      "read_interval": 5000
     },
     {
       "id": "mq2_1",
@@ -44,7 +44,7 @@
       "sensor_type": "ASC",
       "pin": 34,
       "enabled": true,
-      "read_interval": 60000
+      "read_interval": 5000
     },
     {
       "id": "ldr_1",
@@ -53,7 +53,7 @@
       "sensor_type": "LDR",
       "pin": 33,
       "enabled": true,
-      "read_interval": 10000
+      "read_interval": 5000
     },
     {
       "id": "pir_1",
@@ -121,14 +121,7 @@
           "sensor_id": "dht11_1",
           "parameter": "temperature",
           "operator": ">",
-          "value": 30
-        },
-        {
-          "sensor_id": "mq2_1",
-          "parameter": "gas",
-          "operator": ">",
-          "value": 300,
-          "logic": "OR"
+          "value": 25
         }
       ],
       "actions": [
@@ -142,13 +135,13 @@
           "sensor_id": "dht11_1",
           "parameter": "temperature",
           "operator": "<",
-          "value": 30
+          "value": 20
         },
         {
           "sensor_id": "mq2_1",
           "parameter": "gas",
           "operator": "<",
-          "value": 300,
+          "value": 200,
           "logic": "AND"
         }
       ]
@@ -183,18 +176,19 @@
     },
     {
       "id": "rule_3",
-      "name": "Prise Télé Horaire",
+      "name": "Test Horaire (1 minute)",
       "enabled": true,
       "trigger_type": "schedule",
       "schedule": {
-        "start_time": "13:00",
-        "end_time": "16:00",
+        "start_time": "09:00",
+        "end_time": "12:00",
         "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
       },
       "actions": [
         {
           "actuator_id": "relay_3",
-          "action": "turn_on"
+          "action": "turn_on",
+          "duration": 600000
         }
       ]
     },
@@ -208,7 +202,7 @@
           "sensor_id": "mq2_1",
           "parameter": "gas",
           "operator": ">",
-          "value": 400
+          "value": 350
         },
         {
           "sensor_id": "button_1",
@@ -222,7 +216,8 @@
         {
           "actuator_id": "buzzer_1",
           "action": "turn_on",
-          "pattern": "alarm"
+          "pattern": "alarm",
+          "duration": 15000
         }
       ]
     }

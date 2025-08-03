@@ -28,6 +28,12 @@ bool authenticated = false;
 String currentUser = "";
 unsigned long lastSensorRead = 0;
 const unsigned long sensorReadInterval = 1000;
+unsigned long lastDiagnostics = 0;
+const unsigned long diagnosticsInterval = 30000; // 30 secondes
+
+// Time synchronization
+unsigned long timeOffset = 0; // Offset pour synchroniser avec l'heure client
+bool timeSet = false;
 
 // Function prototypes
 void initWiFi();
@@ -42,6 +48,7 @@ void handleSensorData();
 void handleActuatorControl();
 void handleConfig();
 void handleSystemStats();
+void handleTimeSync();
 void handleNotFound();
 void updateSensors();
 void processRules();
@@ -52,6 +59,10 @@ bool evaluateSchedule(const Schedule& schedule);
 void executeActions(const std::vector<Action>& actions);
 String getContentType(String filename);
 bool checkAuthentication();
+BaseActuator* findActuatorById(const String& id);
+String getActuatorType(const String& id);
+void printDiagnostics();
+unsigned long getCurrentTime();
 
 // Sensor readings storage
 std::map<String, SensorReading> latestReadings;
@@ -105,23 +116,22 @@ void loop() {
   updateStatusLED();
   statusLED.update();
   
+  // Print diagnostics periodically
+  if (millis() - lastDiagnostics >= diagnosticsInterval) {
+    printDiagnostics();
+    lastDiagnostics = millis();
+  }
+  
   // Update actuators (for timed operations)
   for (auto* actuator : actuators) {
-    RelayActuator* relay = static_cast<RelayActuator*>(actuator);
-    BuzzerActuator* buzzer = static_cast<BuzzerActuator*>(actuator);
+    String actuatorType = getActuatorType(actuator->getId());
     
-    // Check actuator type and update accordingly
-    for (const auto& deviceConfig : config.devices) {
-      if (deviceConfig.id == actuator->getId()) {
-        if (deviceConfig.actuatorType == "RELAY") {
-          relay = static_cast<RelayActuator*>(actuator);
-          relay->update();
-        } else if (deviceConfig.actuatorType == "BUZZER") {
-          buzzer = static_cast<BuzzerActuator*>(actuator);
-          buzzer->update();
-        }
-        break;
-      }
+    if (actuatorType == "RELAY") {
+      RelayActuator* relay = static_cast<RelayActuator*>(actuator);
+      relay->update();
+    } else if (actuatorType == "BUZZER") {
+      BuzzerActuator* buzzer = static_cast<BuzzerActuator*>(actuator);
+      buzzer->update();
     }
   }
   
@@ -150,6 +160,34 @@ void initWiFi() {
     dnsServer.start(53, "*", IP);
     Serial.println("Captive portal DNS started");
   }
+}
+
+void printDiagnostics() {
+  Serial.println("\n=== OPENDOM DIAGNOSTICS ===");
+  Serial.println("System Status:");
+  Serial.println("- Uptime: " + String(millis() / 1000) + " seconds");
+  Serial.println("- Free heap: " + String(ESP.getFreeHeap()) + " bytes");
+  Serial.println("- WiFi clients: " + String(WiFi.softAPgetStationNum()));
+  
+  Serial.println("\nSensor Status:");
+  for (auto* sensor : sensors) {
+    Serial.println("- " + sensor->getName() + " (Pin " + String(sensor->getPin()) + "):");
+    auto it = latestReadings.find(sensor->getId());
+    if (it != latestReadings.end()) {
+      const SensorReading& reading = it->second;
+      Serial.println("  Connected: " + String(reading.isValid ? "YES" : "NO"));
+      Serial.println("  Last reading: " + String((millis() - reading.timestamp) / 1000) + "s ago");
+    } else {
+      Serial.println("  Status: No data available");
+    }
+  }
+  
+  Serial.println("\nActuator Status:");
+  for (auto* actuator : actuators) {
+    Serial.println("- " + actuator->getName() + " (Pin " + String(actuator->getPin()) + "):");
+    Serial.println("  State: " + String(actuator->getState() ? "ON" : "OFF"));
+  }
+  Serial.println("==========================\n");
 }
 
 void initDevices() {
@@ -211,6 +249,7 @@ void initWebServer() {
   server.on("/api/config", HTTP_GET, handleConfig);
   server.on("/api/config", HTTP_POST, handleConfig);
   server.on("/api/system", HTTP_GET, handleSystemStats);
+  server.on("/api/time", HTTP_POST, handleTimeSync);
   
   // Serve static files
   server.onNotFound(handleNotFound);
@@ -252,28 +291,44 @@ void handleSensorData() {
   JsonDocument doc;
   JsonArray sensorsArray = doc["sensors"].to<JsonArray>();
   
-  for (const auto& reading : latestReadings) {
-    // Ne inclure que les lectures valides dans l'API
-    if (reading.second.isValid) {
+  // Parcourir tous les capteurs configurés
+  for (const auto& deviceConfig : config.devices) {
+    if (deviceConfig.type == "sensor" && deviceConfig.enabled) {
       JsonObject sensorObj = sensorsArray.add<JsonObject>();
-      sensorObj["id"] = reading.second.sensorId;
-      sensorObj["type"] = reading.second.type;
-      sensorObj["timestamp"] = reading.second.timestamp;
-      sensorObj["isValid"] = reading.second.isValid;
+      sensorObj["id"] = deviceConfig.id;
+      sensorObj["name"] = deviceConfig.name;
+      sensorObj["type"] = deviceConfig.sensorType;
+      sensorObj["pin"] = deviceConfig.pin;
+      sensorObj["enabled"] = deviceConfig.enabled;
       
-      if (reading.second.type == "DHT11") {
-        sensorObj["temperature"] = reading.second.temperature;
-        sensorObj["humidity"] = reading.second.humidity;
-      } else if (reading.second.type == "MQ2") {
-        sensorObj["gas"] = reading.second.gas;
-      } else if (reading.second.type == "ASC") {
-        sensorObj["current"] = reading.second.current;
-      } else if (reading.second.type == "LDR") {
-        sensorObj["light"] = reading.second.light;
-      } else if (reading.second.type == "PIR") {
-        sensorObj["motion"] = reading.second.motion;
-      } else if (reading.second.type == "BUTTON") {
-        sensorObj["pressed"] = reading.second.pressed;
+      // Chercher les dernières lectures
+      auto it = latestReadings.find(deviceConfig.id);
+      if (it != latestReadings.end()) {
+        const SensorReading& reading = it->second;
+        
+        sensorObj["connected"] = reading.isValid;
+        sensorObj["timestamp"] = reading.timestamp;
+        
+        // Ajouter les valeurs selon le type de capteur
+        if (deviceConfig.sensorType == "DHT11") {
+          sensorObj["temperature"] = reading.temperature;
+          sensorObj["humidity"] = reading.humidity;
+        } else if (deviceConfig.sensorType == "MQ2") {
+          sensorObj["gas"] = reading.gas;
+        } else if (deviceConfig.sensorType == "ASC") {
+          sensorObj["current"] = reading.current;
+        } else if (deviceConfig.sensorType == "LDR") {
+          sensorObj["light"] = reading.light;
+        } else if (deviceConfig.sensorType == "PIR") {
+          sensorObj["motion"] = reading.motion;
+        } else if (deviceConfig.sensorType == "BUTTON") {
+          sensorObj["pressed"] = reading.pressed;
+        }
+      } else {
+        // Pas de données disponibles
+        sensorObj["connected"] = false;
+        sensorObj["timestamp"] = 0;
+        sensorObj["error"] = "No data available";
       }
     }
   }
@@ -353,28 +408,7 @@ void handleConfig() {
   }
 }
 
-void handleSystemStats() {
-  if (!checkAuthentication()) return;
-  
-  JsonDocument doc;
-  
-  // Récupérer les statistiques système ESP32
-  doc["freeMemory"] = String(ESP.getFreeHeap() / 1024) + " KB";
-  doc["totalMemory"] = String(ESP.getHeapSize() / 1024) + " KB";
-  doc["cpuFreq"] = String(ESP.getCpuFreqMHz()) + " MHz";
-  doc["uptime"] = String(millis() / 1000) + " sec";
-  doc["flashSize"] = String(ESP.getFlashChipSize() / 1024 / 1024) + " MB";
-  doc["wifiRSSI"] = String(WiFi.RSSI()) + " dBm";
-  doc["connectedClients"] = WiFi.softAPgetStationNum();
-  
-  // Température interne (approximative)
-  float temp = (esp_random() % 10) + 35; // Simulation entre 35-44°C
-  doc["cpuTemp"] = String(temp, 1) + "°C";
-  
-  String response;
-  serializeJson(doc, response);
-  server.send(200, "application/json", response);
-}
+
 
 void handleNotFound() {
   String path = server.uri();
@@ -395,58 +429,43 @@ void handleNotFound() {
   }
 }
 
-void updateSensors() {
-  for (auto* sensor : sensors) {
-    if (sensor->isReady()) {
-      SensorReading reading = sensor->read();
-      
-      // Ne stocker que les lectures valides
-      if (reading.isValid) {
-        latestReadings[sensor->getId()] = reading;
-      } else {
-        // Supprimer les lectures invalides du cache
-        latestReadings.erase(sensor->getId());
-        Serial.println("Sensor " + sensor->getId() + ": Removed invalid reading from cache");
-      }
-    }
-  }
-}
+
 
 void updateStatusLED() {
-  // Vérifier s'il y a une alarme active (buzzer en marche)
   bool alarmActive = false;
+  bool anyActuatorActive = false;
+  int activeRelays = 0;
+  int activeBuzzers = 0;
+  
+  // Parcourir tous les actionneurs pour déterminer l'état
   for (auto* actuator : actuators) {
-    for (const auto& deviceConfig : config.devices) {
-      if (deviceConfig.id == actuator->getId() && deviceConfig.actuatorType == "BUZZER") {
-        if (actuator->getState()) {
-          alarmActive = true;
-          break;
-        }
-      }
+    if (!actuator) continue; // Vérification de sécurité
+    
+    String actuatorType = getActuatorType(actuator->getId());
+    bool isActive = actuator->getState();
+    
+    if (actuatorType == "BUZZER" && isActive) {
+      alarmActive = true;
+      activeBuzzers++;
+    } else if (actuatorType == "RELAY" && isActive) {
+      anyActuatorActive = true;
+      activeRelays++;
     }
-    if (alarmActive) break;
   }
   
+  // Log de debug pour le statut (max une fois par 5 secondes)
+  static unsigned long lastStatusLog = 0;
+  if (millis() - lastStatusLog > 5000) {
+    Serial.println("Status LED: Relays=" + String(activeRelays) + 
+                   ", Buzzers=" + String(activeBuzzers) + 
+                   ", Alarm=" + String(alarmActive ? "YES" : "NO"));
+    lastStatusLog = millis();
+  }
+  
+  // Priorité : Alarme > Actionneur actif > Veille
   if (alarmActive) {
     statusLED.setStatus(LEDStatus::ALARM_ACTIVE);
-    return;
-  }
-  
-  // Vérifier si des actionneurs sont actifs
-  bool anyActuatorActive = false;
-  for (auto* actuator : actuators) {
-    for (const auto& deviceConfig : config.devices) {
-      if (deviceConfig.id == actuator->getId() && deviceConfig.actuatorType == "RELAY") {
-        if (actuator->getState()) {
-          anyActuatorActive = true;
-          break;
-        }
-      }
-    }
-    if (anyActuatorActive) break;
-  }
-  
-  if (anyActuatorActive) {
+  } else if (anyActuatorActive) {
     statusLED.setStatus(LEDStatus::SYSTEM_NORMAL_ACTIVE);
   } else {
     statusLED.setStatus(LEDStatus::SYSTEM_NORMAL_IDLE);
@@ -462,66 +481,58 @@ void processRules() {
 }
 
 void evaluateRule(const RuleConfig& rule) {
-  Serial.println("Evaluating rule: " + rule.name + " (ID: " + rule.id + ")");
-  
   bool shouldActivate = false;
   
-  if (rule.triggerType == "sensor_threshold" || rule.triggerType == "sensor_combination") {
-    Serial.println("Rule type: " + rule.triggerType);
-    shouldActivate = evaluateConditions(rule.conditions, latestReadings);
-  } else if (rule.triggerType == "critical_event") {
-    Serial.println("Rule type: critical_event");
+  if (rule.triggerType == "sensor_threshold" || 
+      rule.triggerType == "sensor_combination" || 
+      rule.triggerType == "critical_event") {
     shouldActivate = evaluateConditions(rule.conditions, latestReadings);
   } else if (rule.triggerType == "schedule") {
-    Serial.println("Rule type: schedule");
     shouldActivate = evaluateSchedule(rule.schedule);
   }
   
-  Serial.println("Rule result: " + String(shouldActivate ? "ACTIVATE" : "NO ACTION"));
+  // Debug log pour voir les déclenchements
+  static unsigned long lastRuleLog = 0;
+  if (millis() - lastRuleLog > 5000) { // Log toutes les 5 secondes
+    Serial.println("Rule: " + rule.name + " -> " + (shouldActivate ? "ACTIVE" : "inactive"));
+    lastRuleLog = millis();
+  }
   
   if (shouldActivate) {
-    Serial.println("Activating rule: " + rule.name);
+    Serial.println("EXECUTING RULE: " + rule.name);
     executeActions(rule.actions);
   } else if (!rule.deactivationConditions.empty()) {
     bool shouldDeactivate = evaluateConditions(rule.deactivationConditions, latestReadings);
     if (shouldDeactivate) {
-      Serial.println("Deactivating rule: " + rule.name);
-      // Turn off associated actuators
+      Serial.println("DEACTIVATING RULE: " + rule.name);
       for (const auto& action : rule.actions) {
         for (auto* actuator : actuators) {
           if (actuator->getId() == action.actuatorId) {
-            Serial.println("Turning off actuator: " + action.actuatorId);
             actuator->turnOff();
           }
         }
       }
     }
   }
-  
-  Serial.println("Rule evaluation completed for: " + rule.name);
 }
 
 bool evaluateConditions(const std::vector<Condition>& conditions, const std::map<String, SensorReading>& readings) {
   if (conditions.empty()) return false;
   
-  bool result = true;
+  bool result = false; // Commencer par false, pas true
   String lastLogic = "AND";
   bool firstCondition = true;
+  bool hasValidCondition = false; // Track si on a au moins une condition valide
   
   for (const auto& condition : conditions) {
     auto it = readings.find(condition.sensorId);
-    if (it == readings.end()) {
-      Serial.println("Rule evaluation: Sensor " + condition.sensorId + " not found or disconnected");
+    if (it == readings.end() || !it->second.isValid) {
+      Serial.println("Condition SKIP: " + condition.sensorId + " (no valid data)");
       continue;
     }
+    hasValidCondition = true;
     
     const SensorReading& reading = it->second;
-    
-    // Ignorer les capteurs avec des lectures invalides
-    if (!reading.isValid) {
-      Serial.println("Rule evaluation: Sensor " + condition.sensorId + " has invalid reading, skipping");
-      continue;
-    }
     bool conditionResult = false;
     
     float sensorValue = 0;
@@ -533,18 +544,30 @@ bool evaluateConditions(const std::vector<Condition>& conditions, const std::map
     else if (condition.parameter == "motion") sensorValue = reading.motion ? 1 : 0;
     else if (condition.parameter == "pressed") sensorValue = reading.pressed ? 1 : 0;
     
-    // Plus de valeurs d'erreur -999, toutes les valeurs sont maintenant valides
+   
     // Les capteurs déconnectés retournent des valeurs par défaut sécurisées
+    
+    // Debug log pour voir les valeurs des capteurs
+    Serial.println("Condition: " + condition.sensorId + "." + condition.parameter + 
+                   " " + condition.operator_ + " " + String(condition.value) + 
+                   " (current: " + String(sensorValue) + ")");
     
     if (condition.operator_ == ">") conditionResult = sensorValue > condition.value;
     else if (condition.operator_ == "<") conditionResult = sensorValue < condition.value;
-    else if (condition.operator_ == "==") conditionResult = abs(sensorValue - condition.value) < 0.1;
+    else if (condition.operator_ == "==") {
+      // Pour les capteurs booléens (motion, pressed), comparaison exacte
+      if (condition.parameter == "motion" || condition.parameter == "pressed") {
+        conditionResult = (sensorValue == condition.value);
+      } else {
+        // Pour les autres capteurs, tolérance de 10%
+        float tolerance = max(10.0f, condition.value * 0.1f);
+        conditionResult = abs(sensorValue - condition.value) < tolerance;
+      }
+    }
     else if (condition.operator_ == ">=") conditionResult = sensorValue >= condition.value;
     else if (condition.operator_ == "<=") conditionResult = sensorValue <= condition.value;
     
-    Serial.println("Rule evaluation: " + condition.sensorId + "." + condition.parameter + 
-                   " (" + String(sensorValue) + ") " + condition.operator_ + " " + 
-                   String(condition.value) + " = " + (conditionResult ? "true" : "false"));
+
     
     if (firstCondition) {
       result = conditionResult;
@@ -560,74 +583,67 @@ bool evaluateConditions(const std::vector<Condition>& conditions, const std::map
     lastLogic = condition.logic.isEmpty() ? "AND" : condition.logic;
   }
   
+  // Si aucune condition valide, retourner false
+  if (!hasValidCondition) {
+    Serial.println("No valid conditions found - returning false");
+    return false;
+  }
+  
   return result;
 }
 
 bool evaluateSchedule(const Schedule& schedule) {
-  // Pour une implémentation simple, nous utiliserons millis() pour simuler l'heure
-  // Dans une vraie implémentation, il faudrait un module RTC
-  
-  if (schedule.startTime.isEmpty() || schedule.endTime.isEmpty()) {
-    Serial.println("Schedule evaluation: Missing start or end time");
+  if (!timeSet || schedule.startTime.isEmpty() || schedule.endTime.isEmpty()) {
     return false;
   }
   
-  // Simulation basique : activation entre 13:00 et 16:00 (règle 3)
-  // En production, il faudrait parser les heures et utiliser un RTC
-  unsigned long currentTime = millis();
-  unsigned long hourOfDay = (currentTime / (1000 * 60 * 60)) % 24; // Heure simulée
+  unsigned long currentTimeMs = getCurrentTime();
+  unsigned long currentSeconds = (currentTimeMs / 1000) % 86400; // Secondes dans la journée
   
-  // Pour la démonstration, considérons que l'ESP32 a démarré à 00:00
-  bool isInTimeRange = false;
+  // Parser start_time et end_time (format HH:MM)
+  int startHour = schedule.startTime.substring(0, 2).toInt();
+  int startMin = schedule.startTime.substring(3, 5).toInt();
+  int endHour = schedule.endTime.substring(0, 2).toInt();
+  int endMin = schedule.endTime.substring(3, 5).toInt();
   
-  if (schedule.startTime == "13:00" && schedule.endTime == "16:00") {
-    // Activer pendant 3 heures après 13 heures de fonctionnement
-    unsigned long startMillis = 13 * 60 * 60 * 1000; // 13 heures en ms
-    unsigned long endMillis = 16 * 60 * 60 * 1000;   // 16 heures en ms
-    isInTimeRange = (currentTime >= startMillis && currentTime <= endMillis);
-  }
+  unsigned long startSeconds = startHour * 3600 + startMin * 60;
+  unsigned long endSeconds = endHour * 3600 + endMin * 60;
   
-  Serial.println("Schedule evaluation: Current time simulation = " + String(hourOfDay) + 
-                 ":xx, In range = " + String(isInTimeRange ? "true" : "false"));
-  
-  return isInTimeRange;
+  return (currentSeconds >= startSeconds && currentSeconds <= endSeconds);
 }
 
 void executeActions(const std::vector<Action>& actions) {
-  Serial.println("Executing " + String(actions.size()) + " action(s)");
+  static unsigned long lastActionTime = 0;
+  const unsigned long actionCooldown = 2000; // 2 secondes entre les actions
+  
+  // Anti-rebond pour éviter les actions répétées
+  if (millis() - lastActionTime < actionCooldown) {
+    return;
+  }
   
   for (const auto& action : actions) {
-    bool actuatorFound = false;
-    
     for (auto* actuator : actuators) {
       if (actuator->getId() == action.actuatorId) {
-        actuatorFound = true;
-        
-        Serial.println("Executing action: " + action.action + " on actuator " + action.actuatorId);
-        
         if (action.action == "turn_on") {
+          Serial.println("TURNING ON: " + actuator->getName());
           actuator->turnOn();
+          lastActionTime = millis();
           
-          // Set duration for timed operations
           if (action.duration > 0) {
-            Serial.println("Setting duration: " + String(action.duration) + "ms");
-            for (const auto& deviceConfig : config.devices) {
-              if (deviceConfig.id == actuator->getId() && deviceConfig.actuatorType == "RELAY") {
-                RelayActuator* relay = static_cast<RelayActuator*>(actuator);
-                relay->setDuration(action.duration);
-                break;
-              }
+            String actuatorType = getActuatorType(actuator->getId());
+            if (actuatorType == "RELAY") {
+              RelayActuator* relay = static_cast<RelayActuator*>(actuator);
+              relay->setDuration(action.duration);
             }
           }
           
-          // Set pattern for buzzers
           if (!action.pattern.isEmpty()) {
-            Serial.println("Setting pattern: " + action.pattern);
-            for (const auto& deviceConfig : config.devices) {
-              if (deviceConfig.id == actuator->getId() && deviceConfig.actuatorType == "BUZZER") {
-                BuzzerActuator* buzzer = static_cast<BuzzerActuator*>(actuator);
-                buzzer->setPattern(action.pattern);
-                break;
+            String actuatorType = getActuatorType(actuator->getId());
+            if (actuatorType == "BUZZER") {
+              BuzzerActuator* buzzer = static_cast<BuzzerActuator*>(actuator);
+              buzzer->setPattern(action.pattern);
+              if (action.duration > 0) {
+                buzzer->setDuration(action.duration);
               }
             }
           }
@@ -636,14 +652,8 @@ void executeActions(const std::vector<Action>& actions) {
         } else if (action.action == "toggle") {
           actuator->toggle();
         }
-        
-        Serial.println("Action completed successfully");
         break;
       }
-    }
-    
-    if (!actuatorFound) {
-      Serial.println("Warning: Actuator " + action.actuatorId + " not found for action " + action.action);
     }
   }
 }
@@ -664,4 +674,101 @@ bool checkAuthentication() {
     return false;
   }
   return true;
+}
+
+void updateSensors() {
+  if (millis() - lastSensorRead < sensorReadInterval) {
+    return;
+  }
+  
+  for (auto* sensor : sensors) {
+    if (sensor->isReady()) {
+      SensorReading reading = sensor->read();
+      
+      if (reading.isValid) {
+        latestReadings[sensor->getId()] = reading;
+      } else {
+        if (latestReadings.find(sensor->getId()) == latestReadings.end()) {
+          SensorReading defaultReading;
+          defaultReading.sensorId = sensor->getId();
+          defaultReading.type = reading.type;
+          defaultReading.temperature = 20.0;
+          defaultReading.humidity = 50.0;
+          defaultReading.gas = 0.0;
+          defaultReading.current = 0.0;
+          defaultReading.light = 500.0;
+          defaultReading.motion = false;
+          defaultReading.pressed = false;
+          defaultReading.isValid = true; // Permettre l'utilisation des valeurs par défaut
+          defaultReading.timestamp = millis();
+          
+          latestReadings[sensor->getId()] = defaultReading;
+        }
+      }
+    }
+  }
+  
+  lastSensorRead = millis();
+}
+
+BaseActuator* findActuatorById(const String& id) {
+  for (auto* actuator : actuators) {
+    if (actuator->getId() == id) {
+      return actuator;
+    }
+  }
+  return nullptr;
+}
+
+String getActuatorType(const String& id) {
+  for (const auto& deviceConfig : config.devices) {
+    if (deviceConfig.id == id && deviceConfig.type == "actuator") {
+      return deviceConfig.actuatorType;
+    }
+  }
+  return "";
+}
+
+void handleTimeSync() {
+  if (!checkAuthentication()) return;
+  
+  if (server.hasArg("timestamp")) {
+    unsigned long clientTime = server.arg("timestamp").toInt();
+    timeOffset = clientTime - (millis() / 1000);
+    timeSet = true;
+    
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"Time synchronized\"}");
+    Serial.println("Time synchronized with client. Offset: " + String(timeOffset));
+  } else {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing timestamp\"}");
+  }
+}
+
+void handleSystemStats() {
+  if (!checkAuthentication()) return;
+  
+  JsonDocument doc;
+  doc["freeHeap"] = ESP.getFreeHeap();
+
+  doc["wifiClients"] = WiFi.softAPgetStationNum();
+  doc["timeSet"] = timeSet;
+  doc["cpuTemp"] = temperatureRead(); // Température CPU de l'ESP32
+  doc["totalHeap"] = ESP.getHeapSize();
+  doc["minFreeHeap"] = ESP.getMinFreeHeap();
+  doc["chipRevision"] = ESP.getChipRevision();
+  doc["chipModel"] = ESP.getChipModel();
+  doc["flashSize"] = ESP.getFlashChipSize();
+  
+  if (timeSet) {
+    doc["currentTime"] = getCurrentTime();
+  }
+  
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+unsigned long getCurrentTime() {
+  if (!timeSet) return 0;
+  return (millis() / 1000) + timeOffset;
 }

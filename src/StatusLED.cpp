@@ -10,10 +10,8 @@ void StatusLED::init() {
   pinMode(_greenPin, OUTPUT);
   pinMode(_bluePin, OUTPUT);
   
-  // Test initial - clignotement blanc puis bleu
-  setColor(255, 255, 255);
-  delay(300);
-  setBlue();
+  // Séquence de test au démarrage
+  testSequence();
   
   Serial.println("Status LED initialized on pins R:" + String(_redPin) + 
                  " G:" + String(_greenPin) + " B:" + String(_bluePin));
@@ -98,4 +96,21 @@ void StatusLED::setBlue() {
 
 void StatusLED::setOff() {
   setColor(0, 0, 0);
+}
+
+void StatusLED::testSequence() {
+  // Séquence de test : Rouge -> Vert -> Bleu -> Blanc -> Bleu final
+  Serial.println("Status LED: Test sequence starting...");
+  
+  setRed();
+  delay(200);
+  setGreen();
+  delay(200);
+  setBlue();
+  delay(200);
+  setColor(255, 255, 255); // Blanc
+  delay(200);
+  setBlue(); // État initial (veille)
+  
+  Serial.println("Status LED: Test sequence completed");
 }

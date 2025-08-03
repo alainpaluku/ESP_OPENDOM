@@ -70,7 +70,7 @@ void RelayActuator::update() {
 // BuzzerActuator Implementation
 BuzzerActuator::BuzzerActuator(String id, String name, int pin) 
   : BaseActuator(id, name, pin), _pattern(""), _patternStartTime(0), 
-    _patternStep(0), _patternActive(false) {}
+    _patternStep(0), _patternActive(false), _duration(0), _timedOperation(false) {}
 
 void BuzzerActuator::init() {
   pinMode(_pin, OUTPUT);
@@ -90,6 +90,7 @@ void BuzzerActuator::turnOff() {
   digitalWrite(_pin, LOW);
   _lastAction = millis();
   _patternActive = false;
+  _timedOperation = false;
   Serial.println("Buzzer " + _id + " turned OFF");
 }
 
@@ -122,8 +123,23 @@ void BuzzerActuator::setPattern(String pattern) {
   }
 }
 
+void BuzzerActuator::setDuration(unsigned long duration) {
+  _duration = duration;
+  if (duration > 0 && _patternActive) {
+    _timedOperation = true;
+  }
+}
+
 void BuzzerActuator::update() {
   if (!_patternActive) return;
+  
+  // Vérifier si la durée est écoulée
+  if (_timedOperation && _duration > 0) {
+    if (millis() - _patternStartTime >= _duration) {
+      turnOff();
+      return;
+    }
+  }
   
   if (_pattern == "alarm") {
     playAlarmPattern();

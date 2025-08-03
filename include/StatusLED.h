@@ -21,6 +21,7 @@ public:
   // Méthodes utilitaires
   void setColor(int red, int green, int blue);
   void blink(int red, int green, int blue, unsigned long interval = 500);
+  void testSequence(); // Séquence de test au démarrage
   
 private:
   int _redPin;

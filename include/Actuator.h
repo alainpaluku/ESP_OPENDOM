@@ -58,6 +58,7 @@ public:
   void setState(bool state) override;
   
   void setPattern(String pattern);
+  void setDuration(unsigned long duration);
   void update(); // Call this in main loop to handle patterns
   
 private:
@@ -65,6 +66,8 @@ private:
   unsigned long _patternStartTime;
   int _patternStep;
   bool _patternActive;
+  unsigned long _duration;
+  bool _timedOperation;
   
   void playAlarmPattern();
   void playBeepPattern();

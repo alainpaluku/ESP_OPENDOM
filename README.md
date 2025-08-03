@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+# opendom-esp32
+esp32, iot, home-automation, smart-home, pwa, embedded-systems, sensors, actuators, platformio, arduino, academic-project, domotique, offline-first, web-interface, real-time, automation, french
+=======
 # OPENDOM - Système Domotique Embarqué ESP32
 
 **Description GitHub**: Système domotique autonome ESP32 avec PWA hors ligne, capteurs IoT, LED RGB signalisation, moteur de règles automatiques et interface web moderne. Parfait pour projets académiques et prototypage IoT.
@@ -9,16 +13,41 @@ OPENDOM est un système domotique complet et autonome basé sur ESP32, conçu po
 ## ✨ Caractéristiques principales
 
 ### 🔧 Hardware
+- **ESP32** avec serveur web embarqué et point d'accès WiFi
+- **LED RGB de signalisation** (rouge=alarme, vert=actionneur actif, bleu=veille)
+- **Capteurs supportés**: DHT11, MQ2, ASC, LDR, PIR, Bouton poussoir
+- **Actionneurs supportés**: Relais, Buzzer
+- **Détection automatique** de déconnexion des capteurs
 
 ### 💻 Software
+- **Interface PWA** mobile-first avec design Apple Vision
+- **Système de règles** automatiques configurable via interface web
+- **Authentification** sécurisée avec rôles utilisateur
+- **API REST** complète pour contrôle à distance
+- **Configuration JSON** centralisée et modifiable
+- **Fonctionnement 100% offline** sans dépendance cloud
 
 ### 🛡️ Sécurité et fiabilité
+- **Triple vérification** des lectures capteurs
+- **Validation stabilité** des mesures avec seuils adaptatifs
+- **Aucune valeur négative** ou aléatoire des capteurs
+- **Gestion robuste** des déconnexions de capteurs
+- **Isolation réseau** via point d'accès dédié
 
 ## 🎯 Signalisation LED intelligente
 
+- **🔴 Rouge**: Mode alarme (gaz critique, bouton urgence)
+- **🟢 Vert**: Actionneur actif (relais en fonctionnement)
+- **🔵 Bleu**: Système en veille (fonctionnement normal)
+- **⚪ Éteint**: Erreur système ou démarrage
 
 ## 📋 Configuration par défaut
 
+- **SSID WiFi**: OPENDOM
+- **Mot de passe WiFi**: opendom2025
+- **Utilisateur standard**: astron / astron
+- **Utilisateur root**: astron / astronome
+- **URL d'accès**: http://192.168.4.1
 
 ## 🏗️ Structure du projet
 
@@ -46,6 +75,7 @@ OPENDOM/
 └── README.md
 ```
 
+## 🚀 Installation rapide
 
 ### Prérequis
 - [PlatformIO](https://platformio.org/) installé

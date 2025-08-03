@@ -217,6 +217,7 @@ class OpenDOMApp {
         document.getElementById('mainApp').classList.remove('hidden');
         this.updateProfile();
         this.loadDevices();
+        this.syncTime(); // Synchroniser l'heure après connexion
     }
 
     showLoginScreen() {
@@ -351,13 +352,17 @@ class OpenDOMApp {
             const response = await fetch('/api/sensors');
             const data = await response.json();
             
+            console.log('Received sensor data:', data);
+            
             // Marquer tous les capteurs comme déconnectés au début
             const receivedSensorIds = new Set();
             
-            data.sensors.forEach(reading => {
-                receivedSensorIds.add(reading.id);
-                this.updateSensorReading(reading);
-            });
+            if (data.sensors && Array.isArray(data.sensors)) {
+                data.sensors.forEach(sensorData => {
+                    receivedSensorIds.add(sensorData.id);
+                    this.updateSensorReading(sensorData);
+                });
+            }
             
             // Marquer les capteurs qui n'ont pas envoyé de données comme déconnectés
             this.sensors.forEach((sensor, sensorId) => {
@@ -366,8 +371,9 @@ class OpenDOMApp {
                     const disconnectedReading = {
                         id: sensorId,
                         type: sensor.sensor_type,
-                        isValid: false,
-                        timestamp: Date.now()
+                        connected: false,
+                        timestamp: Date.now(),
+                        error: "Sensor disconnected"
                     };
                     this.updateSensorReading(disconnectedReading);
                 }
@@ -387,22 +393,25 @@ class OpenDOMApp {
         }
     }
 
-    updateSensorReading(reading) {
-        const sensor = this.sensors.get(reading.id);
+    updateSensorReading(sensorData) {
+        const sensor = this.sensors.get(sensorData.id);
         if (!sensor) return;
 
         // Update sensor data in memory
-        sensor.lastReading = reading;
-        sensor.timestamp = reading.timestamp;
+        sensor.lastReading = sensorData;
+        sensor.timestamp = sensorData.timestamp;
+        sensor.connected = sensorData.connected !== false; // Par défaut connecté si pas spécifié
 
         // Update UI if device card exists
-        const deviceCard = document.querySelector(`[data-device-id="${reading.id}"]`);
+        const deviceCard = document.querySelector(`[data-device-id="${sensorData.id}"]`);
         if (deviceCard) {
-            this.updateDeviceCardData(deviceCard, reading);
+            this.updateDeviceCardData(deviceCard, sensorData);
         }
 
-        // Check for alerts
-        this.checkSensorAlerts(reading);
+        // Check for alerts only if sensor is connected and data is valid
+        if (sensor.connected && sensorData.connected !== false) {
+            this.checkSensorAlerts(sensorData);
+        }
     }
 
     updateDeviceCards() {
@@ -485,53 +494,95 @@ class OpenDOMApp {
         return card;
     }
 
-    updateDeviceCardData(card, reading) {
-        const valueElement = card.querySelector(`#value-${reading.id}`);
-        const unitElement = card.querySelector(`#unit-${reading.id}`);
+    updateDeviceCardData(card, sensorData) {
+        const valueElement = card.querySelector(`#value-${sensorData.id}`);
+        const unitElement = card.querySelector(`#unit-${sensorData.id}`);
 
         if (!valueElement) return;
 
-        // Vérifier si le capteur a des données valides
-        if (!reading.isValid || reading.isValid === false) {
-            // Capteur déconnecté - afficher "pas de données"
+        // Vérifier l'état de connexion du capteur
+        if (sensorData.connected === false || sensorData.error) {
+            // Capteur déconnecté - afficher erreur
             valueElement.textContent = '--';
-            unitElement.textContent = 'Capteur déconnecté';
+            unitElement.textContent = sensorData.error || 'Capteur déconnecté';
             this.updateDeviceStatus(card, 'error');
             return;
         }
 
-        // Afficher les données valides
-        switch (reading.type) {
+        // Vérifier les données selon le type de capteur
+        const sensorType = sensorData.type || sensorData.sensor_type;
+        
+        switch (sensorType) {
             case 'DHT11':
-                valueElement.textContent = `${reading.temperature.toFixed(1)}°C`;
-                unitElement.textContent = `Humidité: ${reading.humidity.toFixed(1)}%`;
-                this.updateDeviceStatus(card, 'online');
+                if (sensorData.temperature !== undefined && sensorData.humidity !== undefined) {
+                    valueElement.textContent = `${sensorData.temperature.toFixed(1)}°C`;
+                    unitElement.textContent = `Humidité: ${sensorData.humidity.toFixed(1)}%`;
+                    this.updateDeviceStatus(card, 'online');
+                } else {
+                    valueElement.textContent = '--';
+                    unitElement.textContent = 'Données invalides';
+                    this.updateDeviceStatus(card, 'warning');
+                }
                 break;
             case 'MQ2':
-                valueElement.textContent = reading.gas.toFixed(0);
-                unitElement.textContent = 'ppm (gaz)';
-                this.updateDeviceStatus(card, 'online');
+                if (sensorData.gas !== undefined) {
+                    valueElement.textContent = sensorData.gas.toFixed(0);
+                    unitElement.textContent = 'ppm (gaz)';
+                    this.updateDeviceStatus(card, sensorData.gas > 400 ? 'danger' : 'online');
+                } else {
+                    valueElement.textContent = '--';
+                    unitElement.textContent = 'Données invalides';
+                    this.updateDeviceStatus(card, 'warning');
+                }
                 break;
             case 'ASC':
-                valueElement.textContent = reading.current.toFixed(2);
-                unitElement.textContent = 'A (courant)';
-                this.updateDeviceStatus(card, 'online');
+                if (sensorData.current !== undefined) {
+                    valueElement.textContent = sensorData.current.toFixed(2);
+                    unitElement.textContent = 'A (courant)';
+                    this.updateDeviceStatus(card, 'online');
+                } else {
+                    valueElement.textContent = '--';
+                    unitElement.textContent = 'Données invalides';
+                    this.updateDeviceStatus(card, 'warning');
+                }
                 break;
             case 'LDR':
-                valueElement.textContent = reading.light.toFixed(0);
-                unitElement.textContent = 'lux (luminosité)';
-                this.updateDeviceStatus(card, 'online');
+                if (sensorData.light !== undefined) {
+                    valueElement.textContent = sensorData.light.toFixed(0);
+                    unitElement.textContent = 'lux (luminosité)';
+                    this.updateDeviceStatus(card, 'online');
+                } else {
+                    valueElement.textContent = '--';
+                    unitElement.textContent = 'Données invalides';
+                    this.updateDeviceStatus(card, 'warning');
+                }
                 break;
             case 'PIR':
-                valueElement.textContent = reading.motion ? 'MOUVEMENT' : 'AUCUN';
-                unitElement.textContent = 'Détection';
-                this.updateDeviceStatus(card, 'online');
+                if (sensorData.motion !== undefined) {
+                    valueElement.textContent = sensorData.motion ? 'MOUVEMENT' : 'AUCUN';
+                    unitElement.textContent = 'Détection';
+                    this.updateDeviceStatus(card, sensorData.motion ? 'active' : 'online');
+                } else {
+                    valueElement.textContent = '--';
+                    unitElement.textContent = 'Données invalides';
+                    this.updateDeviceStatus(card, 'warning');
+                }
                 break;
             case 'BUTTON':
-                valueElement.textContent = reading.pressed ? 'PRESSÉ' : 'RELÂCHÉ';
-                unitElement.textContent = 'État du bouton';
-                this.updateDeviceStatus(card, 'online');
+                if (sensorData.pressed !== undefined) {
+                    valueElement.textContent = sensorData.pressed ? 'PRESSÉ' : 'RELÂCHÉ';
+                    unitElement.textContent = 'État du bouton';
+                    this.updateDeviceStatus(card, sensorData.pressed ? 'active' : 'online');
+                } else {
+                    valueElement.textContent = '--';
+                    unitElement.textContent = 'Données invalides';
+                    this.updateDeviceStatus(card, 'warning');
+                }
                 break;
+            default:
+                valueElement.textContent = '--';
+                unitElement.textContent = 'Type inconnu';
+                this.updateDeviceStatus(card, 'warning');
         }
     }
 
@@ -915,20 +966,68 @@ class OpenDOMApp {
     }
 
     updateSystemStats() {
-        // Récupérer les vraies stats du système ESP32
         fetch('/api/system')
             .then(response => response.json())
             .then(data => {
-                document.getElementById('freeMemory').textContent = data.freeMemory || '--';
-                document.getElementById('cpuTemp').textContent = data.cpuTemp || '--';
-                document.getElementById('uptime').textContent = data.uptime || '--';
+                console.log('System stats received:', data); // Debug
+                document.getElementById('freeMemory').textContent = 
+                    data.freeHeap ? Math.round(data.freeHeap / 1024) + ' KB' : '--';
+                document.getElementById('cpuTemp').textContent = 
+                    data.cpuTemp ? Math.round(data.cpuTemp) + '°C' : '--';
+
+                
+                // Nouveaux éléments si disponibles
+                if (document.getElementById('currentTime')) {
+                    document.getElementById('currentTime').textContent = 
+                        data.currentTime ? this.formatTime(data.currentTime) : '--';
+                }
+                if (document.getElementById('totalHeap')) {
+                    document.getElementById('totalHeap').textContent = 
+                        data.totalHeap ? Math.round(data.totalHeap / 1024) + ' KB' : '--';
+                }
+                if (document.getElementById('wifiClients')) {
+                    document.getElementById('wifiClients').textContent = 
+                        data.wifiClients !== undefined ? data.wifiClients : '--';
+                }
+                if (document.getElementById('chipModel')) {
+                    document.getElementById('chipModel').textContent = 
+                        data.chipModel || '--';
+                }
             })
             .catch(() => {
-                // Fallback values si l'API n'est pas disponible
-                document.getElementById('freeMemory').textContent = '245 KB';
-                document.getElementById('cpuTemp').textContent = '45°C';
-                document.getElementById('uptime').textContent = this.formatUptime(Date.now() - (window.startTime || Date.now()));
+                document.getElementById('freeMemory').textContent = '--';
+                document.getElementById('cpuTemp').textContent = '--';
             });
+    }
+
+    
+    formatTime(timestamp) {
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleTimeString('fr-FR', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+
+    async syncTime() {
+        try {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const response = await fetch('/api/time', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `timestamp=${timestamp}`
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                console.log('Heure synchronisée avec l\'ESP32');
+            }
+        } catch (error) {
+            console.error('Erreur de synchronisation temporelle:', error);
+        }
     }
 
     formatUptime(milliseconds) {
