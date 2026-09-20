@@ -16,12 +16,12 @@
     "red_pin": 25,
     "green_pin": 26,
     "blue_pin": 27,
-    "description": "LED RGB de signalisation automatique"
+    "description": "Automatic signaling RGB LED"
   },
   "devices": [
     {
       "id": "dht11_1",
-      "name": "Capteur Temp/Humidité",
+      "name": "Temp/Humidity Sensor",
       "type": "sensor",
       "sensor_type": "DHT11",
       "pin": 4,
@@ -30,7 +30,7 @@
     },
     {
       "id": "mq2_1",
-      "name": "Capteur Gaz",
+      "name": "Gas Sensor",
       "type": "sensor",
       "sensor_type": "MQ2",
       "pin": 35,
@@ -39,7 +39,7 @@
     },
     {
       "id": "asc_1",
-      "name": "Capteur Courant",
+      "name": "Current Sensor",
       "type": "sensor",
       "sensor_type": "ASC",
       "pin": 34,
@@ -48,7 +48,7 @@
     },
     {
       "id": "ldr_1",
-      "name": "Capteur Luminosité",
+      "name": "Light Sensor",
       "type": "sensor",
       "sensor_type": "LDR",
       "pin": 33,
@@ -57,7 +57,7 @@
     },
     {
       "id": "pir_1",
-      "name": "Détecteur Mouvement",
+      "name": "Motion Detector",
       "type": "sensor",
       "sensor_type": "PIR",
       "pin": 2,
@@ -66,7 +66,7 @@
     },
     {
       "id": "button_1",
-      "name": "Bouton Urgence",
+      "name": "Emergency Button",
       "type": "sensor",
       "sensor_type": "BUTTON",
       "pin": 0,
@@ -75,7 +75,7 @@
     },
     {
       "id": "relay_1",
-      "name": "Relais Ventilation",
+      "name": "Ventilation Relay",
       "type": "actuator",
       "actuator_type": "RELAY",
       "pin": 5,
@@ -84,7 +84,7 @@
     },
     {
       "id": "relay_2",
-      "name": "Relais Éclairage Extérieur",
+      "name": "Outdoor Light Relay",
       "type": "actuator",
       "actuator_type": "RELAY",
       "pin": 18,
@@ -93,7 +93,7 @@
     },
     {
       "id": "relay_3",
-      "name": "Prise Télé",
+      "name": "TV Outlet Relay",
       "type": "actuator",
       "actuator_type": "RELAY",
       "pin": 19,
@@ -102,7 +102,7 @@
     },
     {
       "id": "buzzer_1",
-      "name": "Buzzer Alarme",
+      "name": "Alarm Buzzer",
       "type": "actuator",
       "actuator_type": "BUZZER",
       "pin": 21,
@@ -113,7 +113,7 @@
   "rules": [
     {
       "id": "rule_1",
-      "name": "Ventilation Auto",
+      "name": "Auto Ventilation",
       "enabled": true,
       "trigger_type": "sensor_threshold",
       "conditions": [
@@ -148,7 +148,7 @@
     },
     {
       "id": "rule_2",
-      "name": "Éclairage Extérieur Auto",
+      "name": "Auto Outdoor Lighting",
       "enabled": true,
       "trigger_type": "sensor_combination",
       "conditions": [
@@ -176,7 +176,7 @@
     },
     {
       "id": "rule_3",
-      "name": "Test Horaire (1 minute)",
+      "name": "Scheduled Outlet",
       "enabled": true,
       "trigger_type": "schedule",
       "schedule": {
@@ -194,7 +194,7 @@
     },
     {
       "id": "rule_4",
-      "name": "Alarme Gaz/Urgence",
+      "name": "Gas/Emergency Alarm",
       "enabled": true,
       "trigger_type": "critical_event",
       "conditions": [

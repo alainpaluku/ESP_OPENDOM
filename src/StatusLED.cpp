@@ -10,7 +10,7 @@ void StatusLED::init() {
   pinMode(_greenPin, OUTPUT);
   pinMode(_bluePin, OUTPUT);
   
-  // Séquence de test au démarrage
+  // Power-on self-test sequence
   testSequence();
   
   Serial.println("Status LED initialized on pins R:" + String(_redPin) + 
@@ -41,7 +41,7 @@ void StatusLED::setStatus(LEDStatus status) {
 }
 
 void StatusLED::update() {
-  // Clignotement pour l'alarme
+  // Blinking effect for alarm
   if (_currentStatus == LEDStatus::ALARM_ACTIVE) {
     if (millis() - _lastBlink >= _blinkInterval) {
       _blinkState = !_blinkState;
@@ -61,7 +61,7 @@ void StatusLED::turnOff() {
 }
 
 void StatusLED::setColor(int red, int green, int blue) {
-  // Utilisation de PWM pour contrôler l'intensité
+  // PWM output for color intensity
   analogWrite(_redPin, red);
   analogWrite(_greenPin, green);
   analogWrite(_bluePin, blue);
@@ -99,7 +99,7 @@ void StatusLED::setOff() {
 }
 
 void StatusLED::testSequence() {
-  // Séquence de test : Rouge -> Vert -> Bleu -> Blanc -> Bleu final
+  // Test sequence: Red -> Green -> Blue -> White -> Initial Blue (Idle)
   Serial.println("Status LED: Test sequence starting...");
   
   setRed();
@@ -108,9 +108,9 @@ void StatusLED::testSequence() {
   delay(200);
   setBlue();
   delay(200);
-  setColor(255, 255, 255); // Blanc
+  setColor(255, 255, 255); // White
   delay(200);
-  setBlue(); // État initial (veille)
+  setBlue(); // Idle state
   
   Serial.println("Status LED: Test sequence completed");
 }

@@ -4,9 +4,9 @@
 #include <Arduino.h>
 
 enum class LEDStatus {
-  SYSTEM_NORMAL_IDLE,    // Bleu - Système fonctionne, aucun actionneur actif
-  SYSTEM_NORMAL_ACTIVE,  // Vert - Système fonctionne, actionneur(s) actif(s)
-  ALARM_ACTIVE          // Rouge - Alarme active
+  SYSTEM_NORMAL_IDLE,    // Blue - System normal, no active actuators
+  SYSTEM_NORMAL_ACTIVE,  // Green - System normal, actuator(s) active
+  ALARM_ACTIVE          // Red - Alarm active
 };
 
 class StatusLED {
@@ -15,13 +15,13 @@ public:
   
   void init();
   void setStatus(LEDStatus status);
-  void update(); // Pour les effets de clignotement
+  void update(); // Handle blink effects
   void turnOff();
   
-  // Méthodes utilitaires
+  // Utility methods
   void setColor(int red, int green, int blue);
   void blink(int red, int green, int blue, unsigned long interval = 500);
-  void testSequence(); // Séquence de test au démarrage
+  void testSequence(); // Power-on self-test sequence
   
 private:
   int _redPin;
@@ -33,7 +33,7 @@ private:
   unsigned long _lastBlink;
   unsigned long _blinkInterval;
   
-  // Couleurs prédéfinies
+  // Predefined colors
   void setRed();
   void setGreen(); 
   void setBlue();

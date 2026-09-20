@@ -1,266 +1,117 @@
-# opendom-esp32
-esp32, iot, home-automation, smart-home, pwa, embedded-systems, sensors, actuators, platformio, arduino, academic-project, domotique, offline-first, web-interface, real-time, automation, french
-=======
-# OPENDOM - Système Domotique Embarqué ESP32
+# OPENDOM - Embedded ESP32 Smart Home System
 
-**Description GitHub**: Système domotique autonome ESP32 avec PWA hors ligne, capteurs IoT, LED RGB signalisation, moteur de règles automatiques et interface web moderne. Parfait pour projets académiques et prototypage IoT.
+OPENDOM is an autonomous, open-source embedded home automation system powered by the ESP32 microcontroller. Designed to operate 100% offline without any cloud dependencies, OPENDOM integrates a Progressive Web App (PWA) with a mobile-first interface, an automated rule evaluation engine, and a multi-sensor monitoring framework.
 
-## 🏠 Description
+## Key Features
 
-OPENDOM est un système domotique complet et autonome basé sur ESP32, conçu pour fonctionner entièrement hors ligne. Il intègre une Progressive Web App (PWA) moderne avec interface mobile-first et un moteur de règles avancé pour l'automatisation intelligente.
+### Hardware Integration
+- Microcontroller: ESP32 DevKit or compatible boards with embedded HTTP server and standalone WiFi Access Point.
+- Status Signaling: RGB LED indicator for visual feedback (Red for alarms, Green for active actuators, Blue for idle state).
+- Sensor Support: DHT11 (Temperature and Humidity), MQ2 (Gas / Smoke), ACS712 (Current), LDR (Light level), PIR (Motion detection), and Digital Push Button.
+- Actuator Support: Relays (Solenoid / Appliance control) and Active Buzzers (Audible alarms and alert patterns).
+- Sensor Diagnostics: Fault detection and automatic disconnection handling.
 
-## ✨ Caractéristiques principales
+### Software Architecture
+- Offline-First PWA: Modern Progressive Web App with responsive, mobile-first interface designed for desktop and mobile devices.
+- Automation Engine: Configurable rule engine supporting multi-condition triggers, scheduled events, hysteresis, and action timeouts.
+- Security and Access Control: Token-based API authentication and multi-tier user role validation (standard and administrator access).
+- REST API: Endpoints for real-time sensor polling, actuator control, rule execution, and system configuration.
+- Storage: SPIFFS (Serial Peripheral Interface Flash File System) central JSON configuration storage.
 
-### 🔧 Hardware
-- **ESP32** avec serveur web embarqué et point d'accès WiFi
-- **LED RGB de signalisation** (rouge=alarme, vert=actionneur actif, bleu=veille)
-- **Capteurs supportés**: DHT11, MQ2, ASC, LDR, PIR, Bouton poussoir
-- **Actionneurs supportés**: Relais, Buzzer
-- **Détection automatique** de déconnexion des capteurs
+### Security and Reliability
+- Multi-sample Sensor Filtering: Noise suppression, triple-reading validation, and adaptive thresholds to ensure measurement stability.
+- Memory Management: Heap tracking, static allocations, and connection state checks.
+- Network Isolation: Standalone WiFi access point with optional captive portal support.
 
-### 💻 Software
-- **Interface PWA** mobile-first avec design Apple Vision
-- **Système de règles** automatiques configurable via interface web
-- **Authentification** sécurisée avec rôles utilisateur
-- **API REST** complète pour contrôle à distance
-- **Configuration JSON** centralisée et modifiable
-- **Fonctionnement 100% offline** sans dépendance cloud
+## RGB LED Status Indicators
 
-### 🛡️ Sécurité et fiabilité
-- **Triple vérification** des lectures capteurs
-- **Validation stabilité** des mesures avec seuils adaptatifs
-- **Aucune valeur négative** ou aléatoire des capteurs
-- **Gestion robuste** des déconnexions de capteurs
-- **Isolation réseau** via point d'accès dédié
+- Red: Active Alarm Mode (Critical gas threshold or emergency button triggered)
+- Green: Active Actuator Mode (Relay or load active)
+- Blue: Idle Mode (System operational and ready)
+- Off: System error or boot sequence initialization
 
-## 🎯 Signalisation LED intelligente
+## Default System Configuration
 
-- **🔴 Rouge**: Mode alarme (gaz critique, bouton urgence)
-- **🟢 Vert**: Actionneur actif (relais en fonctionnement)
-- **🔵 Bleu**: Système en veille (fonctionnement normal)
-- **⚪ Éteint**: Erreur système ou démarrage
+- WiFi Access Point SSID: OPENDOM
+- WiFi Password: opendom2025
+- Standard User Credentials: astron / astron
+- Root Administrator Credentials: astron / astronome
+- Web Interface Access URL: http://192.168.4.1
 
-## 📋 Configuration par défaut
-
-- **SSID WiFi**: OPENDOM
-- **Mot de passe WiFi**: opendom2025
-- **Utilisateur standard**: astron / astron
-- **Utilisateur root**: astron / astronome
-- **URL d'accès**: http://192.168.4.1
-
-## 🏗️ Structure du projet
+## Project File Structure
 
 ```
 OPENDOM/
-├── platformio.ini              # Configuration PlatformIO
-├── src/                        # Code source ESP32
-│   ├── main.cpp               # Programme principal
-│   ├── Config.cpp             # Gestion configuration
-│   ├── Sensor.cpp             # Classes capteurs avec validation
-│   ├── Actuator.cpp           # Classes actionneurs
-│   └── StatusLED.cpp          # Contrôle LED RGB signalisation
-├── include/                    # Headers C++
+├── platformio.ini              # PlatformIO build configuration
+├── src/                        # ESP32 C++ source code
+│   ├── main.cpp               # Main application and web server handlers
+│   ├── Config.cpp             # System configuration parser
+│   ├── Sensor.cpp             # Sensor abstraction layer with validation
+│   ├── Actuator.cpp           # Actuator controller implementations
+│   └── StatusLED.cpp          # Visual RGB signaling controller
+├── include/                    # C++ header declarations
 │   ├── Config.h
 │   ├── Sensor.h
 │   ├── Actuator.h
 │   └── StatusLED.h
-├── data/                       # Interface web PWA
-│   ├── index.html             # Interface principale
-│   ├── style.css              # Styles CSS modernes
-│   ├── app.js                 # Application JavaScript
-│   ├── manifest.json          # Manifest PWA
-│   ├── sw.js                  # Service Worker offline
-│   └── configuration.json     # Configuration système
-└── README.md
+├── data/                       # Offline PWA web interface
+│   ├── index.html             # Application markup
+│   ├── style.css              # Responsive styling
+│   ├── app.js                 # PWA logic and API communication
+│   ├── manifest.json          # Web application manifest
+│   ├── sw.js                  # Service Worker offline caching controller
+│   └── configuration.json     # Default hardware and automation setup
+└── README.md                   # System documentation
 ```
 
-## 🚀 Installation rapide
+## Quick Start Installation Guide
 
-### Prérequis
-- [PlatformIO](https://platformio.org/) installé
-- ESP32 DevKit ou compatible
-- Capteurs et actionneurs selon configuration
+### Prerequisites
+- Installed PlatformIO IDE or PlatformIO CLI.
+- ESP32 Development Board (ESP32-WROOM-32 or similar).
+- Required sensors and actuators wired according to GPIO configuration.
 
-### Étapes d'installation
+### Setup Steps
 
-1. **Cloner le projet**
+1. Clone the repository:
 ```bash
-git clone https://github.com/palukuba/opendom-esp32
+git clone https://github.com/palukuba/opendom-esp32.git
 cd opendom-esp32
 ```
 
-2. **Compiler et flasher**
+2. Build and flash firmware:
 ```bash
-# Compiler le firmware
+# Compile project firmware
 pio run
 
-# Uploader le système de fichiers (interface web)
+# Upload SPIFFS web interface files
 pio run -t uploadfs
 
-# Uploader le firmware
+# Upload compiled firmware to ESP32 board
 pio run -t upload
 
-# Monitorer les logs
+# Monitor serial output logs
 pio device monitor
 ```
 
-3. **Première connexion**
-- Connectez-vous au WiFi "OPENDOM" (mot de passe: opendom2025)
-- Ouvrez http://192.168.4.1
-- Connectez-vous avec astron/astron
+3. Connect to OPENDOM Access Point:
+- Connect your device to WiFi network: `OPENDOM` (Password: `opendom2025`).
+- Open a browser and navigate to: `http://192.168.4.1`.
+- Authenticate using default credentials: `astron` / `astron`.
 
-## 📱 Interface utilisateur
+## REST API Reference
 
-### Navigation principale
-- **🏠 Accueil**: Tableau de bord temps réel avec statut LED
-- **🔍 Surveillance**: Alertes et historique des événements
-- **⚙️ Appareils**: Configuration des dispositifs (accès root)
-- **⚙️ Paramètres**: Préférences système et thèmes
+| Endpoint | Method | Description |
+|---|---|---|
+| `/login` | POST | Authenticates user credentials and returns session token |
+| `/api/sensors` | GET | Returns real-time sensor measurements |
+| `/api/actuators` | POST | Toggles or updates actuator state |
+| `/api/config` | GET / POST | Retrieves or updates system config (Admin authorization required for POST) |
+| `/api/system` | GET | Retrieves system diagnostics, heap memory, and status metrics |
+| `/api/time` | POST | Synchronizes system timestamp with client time |
 
-### Fonctionnalités PWA
-- **Installation** comme application native
-- **Mode hors ligne** complet avec Service Worker
-- **Thème sombre/clair** avec sauvegarde préférences
-- **Notifications push** pour alertes critiques
-- **Interface responsive** optimisée mobile/desktop
+## License and Attribution
 
-## 🔧 Configuration des dispositifs
+This project was created by Paluku B as an embedded systems and IoT engineering implementation.
 
-### Capteurs par défaut
-```json
-{
-  "DHT11": { "pin": 4, "type": "temperature_humidity" },
-  "MQ2": { "pin": 35, "type": "gas_sensor" },
-  "ASC": { "pin": 34, "type": "current_sensor" },
-  "LDR": { "pin": 33, "type": "light_sensor" },
-  "PIR": { "pin": 2, "type": "motion_sensor" },
-  "Button": { "pin": 0, "type": "digital_input" }
-}
-```
-
-### Actionneurs par défaut
-```json
-{
-  "Relay1": { "pin": 5, "type": "relay" },
-  "Relay2": { "pin": 18, "type": "relay" },
-  "Relay3": { "pin": 19, "type": "relay" },
-  "Buzzer": { "pin": 21, "type": "buzzer" }
-}
-```
-
-## 🎮 Exemples de règles automatiques
-
-1. **Ventilation intelligente**
-   - Déclencheur: Température > 30°C OU Gaz > 300ppm
-   - Action: Activer Relay1 (ventilateur)
-
-2. **Éclairage extérieur**
-   - Déclencheur: Luminosité < 400 lux ET Mouvement détecté
-   - Action: Activer Relay2 (éclairage)
-
-3. **Prise programmée**
-   - Déclencheur: Horaire 13h00-16h00
-   - Action: Activer Relay3 (prise télé)
-
-4. **Alarme gaz critique**
-   - Déclencheur: Gaz > 400ppm OU Bouton urgence
-   - Action: Buzzer + LED rouge
-
-## 🔌 API REST
-
-| Endpoint | Méthode | Description |
-|----------|---------|-------------|
-| `/login` | POST | Authentification utilisateur |
-| `/api/sensors` | GET | Données capteurs temps réel |
-| `/api/actuators` | POST | Contrôle actionneurs |
-| `/api/status` | GET | État LED et système |
-| `/api/config` | GET/POST | Configuration (root requis) |
-| `/api/rules` | GET/POST | Gestion règles automatiques |
-
-## 🛠️ Développement
-
-### Ajouter un nouveau capteur
-
-1. **Créer la classe** dans `include/Sensor.h` et `src/Sensor.cpp`
-2. **Ajouter l'initialisation** dans `initDevices()` 
-3. **Mettre à jour** `configuration.json`
-4. **Ajouter l'icône** dans `getDeviceIcon()` de `app.js`
-
-### Personnaliser la signalisation LED
-
-Modifier la logique dans `src/StatusLED.cpp`:
-```cpp
-void StatusLED::updateStatus(SystemStatus status) {
-    switch(status) {
-        case ALARM: setColor(255, 0, 0); break;     // Rouge
-        case ACTIVE: setColor(0, 255, 0); break;    // Vert
-        case IDLE: setColor(0, 0, 255); break;      // Bleu
-        case OFF: setColor(0, 0, 0); break;         // Éteint
-    }
-}
-```
-
-## 🐛 Dépannage
-
-### Problèmes courants
-
-**Capteurs donnent des valeurs incorrectes**
-- Vérifier les connexions hardware
-- Consulter les logs série pour voir la validation triple
-- S'assurer que les seuils de stabilité sont adaptés
-
-**LED RGB ne fonctionne pas**
-- Vérifier les pins de connexion (R, G, B)
-- Tester avec `StatusLED::testSequence()`
-- Contrôler l'alimentation de la LED
-
-**Interface web inaccessible**
-- Vérifier la connexion WiFi OPENDOM
-- Re-uploader le système de fichiers: `pio run -t uploadfs`
-- Contrôler les logs avec `pio device monitor`
-
-## 📄 Licence
-
-Ce projet est développé par **Paluku B** dans le cadre d'un travail académique. 
-
-Le code source est libre et distribué sous licence MIT. Vous êtes libre de l'utiliser, le modifier et le distribuer pour des projets académiques, personnels ou commerciaux.
-
-### Conditions d'utilisation
-- ✅ Usage commercial autorisé
-- ✅ Modification autorisée  
-- ✅ Distribution autorisée
-- ✅ Usage privé autorisé
-- ⚠️ Attribution requise
-
-## 🎓 Contexte académique
-
-OPENDOM a été développé comme projet de fin d'études en systèmes embarqués et IoT. Il démontre:
-
-- **Intégration hardware/software** complète
-- **Programmation ESP32** avancée avec FreeRTOS
-- **Interface web moderne** avec PWA
-- **Gestion temps réel** des capteurs et actionneurs
-- **Architecture modulaire** et extensible
-- **Validation rigoureuse** des données capteurs
-
-## 🤝 Contribution
-
-Les contributions sont encouragées! Pour contribuer:
-
-1. **Fork** le projet
-2. **Créer** une branche feature (`git checkout -b feature/AmazingFeature`)
-3. **Commiter** les changements (`git commit -m 'Add AmazingFeature'`)
-4. **Push** vers la branche (`git push origin feature/AmazingFeature`)
-5. **Ouvrir** une Pull Request
-
-## 📞 Support
-
-- 📧 **Email**: [palukuba@proton.me](mailto:palukuba@proton.me)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/palukuba/opendom-esp32/issues)
-- 📖 **Documentation**: Voir ce README et les commentaires dans le code
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/palukuba/opendom-esp32/discussions)
-
----
-
-⭐ **N'hésitez pas à donner une étoile si ce projet vous aide dans vos travaux académiques ou projets IoT!**
->>>>>>> f4568a2 (Premier commit)
+Source code is released under the MIT License. You are free to modify, distribute, and integrate this software in academic, commercial, or private environments provided the original attribution is retained.
