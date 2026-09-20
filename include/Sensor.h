@@ -14,7 +14,7 @@ struct SensorReading {
   float light;
   bool motion;
   bool pressed;
-  bool isValid;  // true si la lecture est valide (capteur connecté)
+  bool isValid;  // True if reading is valid (sensor connected)
   unsigned long timestamp;
 };
 

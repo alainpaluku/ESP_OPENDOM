@@ -1,7 +1,7 @@
 {
   "name": "OPENDOM",
   "short_name": "OPENDOM",
-  "description": "Système domotique embarqué autonome",
+  "description": "Autonomous embedded home automation system",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1a1a1a",
@@ -22,7 +22,7 @@
     }
   ],
   "categories": ["productivity", "utilities"],
-  "lang": "fr",
+  "lang": "en",
   "scope": "/",
   "permissions": ["notifications"]
 }

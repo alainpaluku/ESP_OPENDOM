@@ -23,44 +23,44 @@ SensorReading DHT11Sensor::read() {
   reading.sensorId = _id;
   reading.type = "DHT11";
   reading.timestamp = millis();
-  reading.isValid = false; // Par défaut invalide
+  reading.isValid = false; // Default invalid
   
   if (_dht) {
-    // Attendre au moins 2 secondes entre les lectures pour DHT11
+    // Wait at least 2 seconds between DHT11 readings
     static unsigned long lastDHTRead = 0;
     if (millis() - lastDHTRead < 2000) {
       reading.isValid = false;
       return reading;
     }
     
-    // Première tentative de lecture
+    // First read attempt
     float temp1 = _dht->readTemperature();
     float hum1 = _dht->readHumidity();
     
     if (isnan(temp1) || isnan(hum1)) {
       Serial.println("DHT11 Sensor " + _id + ": First read failed - trying recovery");
       
-      // Délai et seconde tentative
+      // Delay and second attempt
       delay(250);
       float temp2 = _dht->readTemperature();
       float hum2 = _dht->readHumidity();
       
       if (isnan(temp2) || isnan(hum2)) {
-        Serial.println("DHT11 Sensor " + _id + ": Capteur déconnecté ou défaillant");
+        Serial.println("DHT11 Sensor " + _id + ": Sensor disconnected or failing");
         reading.isValid = false;
         lastDHTRead = millis();
         return reading;
       } else {
         reading.temperature = temp2;
         reading.humidity = hum2;
-        Serial.println("DHT11 Sensor " + _id + ": Récupération réussie");
+        Serial.println("DHT11 Sensor " + _id + ": Recovery successful");
       }
     } else {
       reading.temperature = temp1;
       reading.humidity = hum1;
     }
     
-    // Validation des plages réalistes
+    // Validation of realistic ranges
     if (reading.temperature >= -40 && reading.temperature <= 80 &&
         reading.humidity >= 0 && reading.humidity <= 100) {
       reading.isValid = true;
@@ -70,7 +70,7 @@ SensorReading DHT11Sensor::read() {
     
     lastDHTRead = millis();
   } else {
-    Serial.println("DHT11 Sensor " + _id + ": Non initialisé");
+    Serial.println("DHT11 Sensor " + _id + ": Uninitialized");
     reading.isValid = false;
   }
   
@@ -93,14 +93,14 @@ SensorReading MQ2Sensor::read() {
   reading.type = "MQ2";
   reading.timestamp = millis();
   
-  // Lectures multiples pour stabilité (5 lectures)
+  // Multiple readings for stability (5 samples)
   int readings[5];
   for (int i = 0; i < 5; i++) {
     readings[i] = analogRead(_pin);
     delay(1);
   }
   
-  // Calcul de la moyenne en excluant les valeurs extrêmes
+  // Calculate average excluding extreme values
   int sum = 0;
   int minVal = readings[0], maxVal = readings[0];
   for (int i = 0; i < 5; i++) {
@@ -110,19 +110,19 @@ SensorReading MQ2Sensor::read() {
   }
   int avgValue = (sum - minVal - maxVal) / 3;
   
-  // Vérification si le capteur est connecté
-  bool isConnected = (avgValue > 50) &&          // Seuil minimum pour MQ2 (capteur de gaz)
-                     (avgValue < 4080) &&        // Pas saturé
-                     ((maxVal - minVal) < 100);  // Stabilité des lectures
+  // Check if sensor is connected
+  bool isConnected = (avgValue > 50) &&          // Minimum threshold for MQ2 gas sensor
+                     (avgValue < 4080) &&        // Not saturated
+                     ((maxVal - minVal) < 100);  // Stability check
   
   if (!isConnected) {
-    Serial.println("MQ2 Sensor " + _id + ": Capteur déconnecté ou instable");
+    Serial.println("MQ2 Sensor " + _id + ": Sensor disconnected or unstable");
     reading.isValid = false;
   } else {
-    // Conversion en ppm (approximative)
+    // Approximate conversion to ppm
     reading.gas = map(avgValue, 50, 4095, 0, 1000);
     
-    // Assurer que la valeur est dans les limites
+    // Clamp values
     if (reading.gas < 0) reading.gas = 0;
     if (reading.gas > 1000) reading.gas = 1000;
     
@@ -148,38 +148,38 @@ SensorReading ASCSensor::read() {
   reading.type = "ASC";
   reading.timestamp = millis();
   
-  // Lectures multiples pour stabilité
+  // Multiple readings for stability
   int rawValue1 = analogRead(_pin);
   delay(2);
   int rawValue2 = analogRead(_pin);
   delay(2);
   int rawValue3 = analogRead(_pin);
   
-  // Vérification de stabilité des lectures
+  // Check stability
   int maxDiff = max(max(abs(rawValue1 - rawValue2), abs(rawValue2 - rawValue3)), abs(rawValue1 - rawValue3));
   
-  // Vérification si le capteur est connecté
-  bool isConnected = (maxDiff < 50) &&           // Valeurs stables
-                     (rawValue1 > 10) &&         // Pas à zéro
-                     (rawValue1 < 4080) &&       // Pas saturé
+  // Check if sensor is connected
+  bool isConnected = (maxDiff < 50) &&           // Stable readings
+                     (rawValue1 > 10) &&         // Not zero
+                     (rawValue1 < 4080) &&       // Not saturated
                      (rawValue2 > 10) && 
                      (rawValue2 < 4080);
   
   if (!isConnected) {
-    Serial.println("ASC Sensor " + _id + ": Capteur déconnecté - pas de données");
+    Serial.println("ASC Sensor " + _id + ": Sensor disconnected - no data");
     reading.isValid = false;
   } else {
-    // Utiliser la moyenne des 3 lectures
+    // Average of 3 readings
     int avgValue = (rawValue1 + rawValue2 + rawValue3) / 3;
     float voltage = (avgValue / 4095.0) * _voltage;
     
-    // Calcul du courant avec protection contre les valeurs négatives
+    // Calculate current with negative value protection
     float currentCalc = (voltage - (_voltage / 2.0)) / _sensitivity;
     
-    // JAMAIS de valeur négative - forcer à zéro minimum
+    // Prevent negative readings
     reading.current = (currentCalc < 0.0) ? 0.0 : currentCalc;
     
-    // Limiter à une valeur maximale raisonnable (ex: 30A)
+    // Cap at maximum expected current (e.g. 30A)
     if (reading.current > 30.0) reading.current = 30.0;
     
     reading.isValid = true;
@@ -204,47 +204,42 @@ SensorReading LDRSensor::read() {
   reading.type = "LDR";
   reading.timestamp = millis();
   
-  // Lectures multiples pour stabilité
+  // Multiple readings for stability
   int rawValue1 = analogRead(_pin);
   delay(2);
   int rawValue2 = analogRead(_pin);
   delay(2);
   int rawValue3 = analogRead(_pin);
   
-  // Vérification de stabilité des lectures
+  // Check stability
   int maxDiff = max(max(abs(rawValue1 - rawValue2), abs(rawValue2 - rawValue3)), abs(rawValue1 - rawValue3));
   
-  // Vérification si le capteur LDR est connecté
-  // Pour un LDR, les valeurs peuvent aller de très bas (obscurité) à très haut (forte lumière)
-  bool isConnected = (maxDiff < 100) &&          // Valeurs relativement stables
-                     (rawValue1 >= 0) &&         // Valeur minimum acceptable
-                     (rawValue1 <= 4095) &&      // Dans la plage ADC
+  // Check if LDR sensor is connected
+  bool isConnected = (maxDiff < 100) &&          // Reasonably stable
+                     (rawValue1 >= 0) &&         // Acceptable min
+                     (rawValue1 <= 4095) &&      // Within ADC range
                      (rawValue2 >= 0) && 
                      (rawValue2 <= 4095) &&
                      (rawValue3 >= 0) && 
                      (rawValue3 <= 4095) &&
-                     // Au moins une lecture non nulle (éviter les courts-circuits)
                      ((rawValue1 + rawValue2 + rawValue3) > 0);
   
   if (!isConnected) {
-    Serial.println("LDR Sensor " + _id + ": Capteur déconnecté - pas de données");
+    Serial.println("LDR Sensor " + _id + ": Sensor disconnected - no data");
     reading.isValid = false;
   } else {
-    // Utiliser la moyenne des 3 lectures
+    // Average of 3 readings
     int avgValue = (rawValue1 + rawValue2 + rawValue3) / 3;
     
-    // Conversion en lux approximative pour un LDR en pull-up
-    // Plus la valeur ADC est faible, plus il y a de lumière (logique inversée)
-    // Formule : lux = 1000 - (ADC / 4095) * 1000 (approximation 0-1000 lux)
+    // Approximate lux conversion for pull-up LDR
     reading.light = 1000.0 - (float(avgValue) / 4095.0) * 1000.0;
     
-    // Assurer que la valeur est dans la plage correcte
+    // Clamp within bounds
     if (reading.light < 0) reading.light = 0;
     if (reading.light > 1000) reading.light = 1000;
     
     reading.isValid = true;
     
-    // Log de debug pour LDR (une fois par seconde max)
     static unsigned long lastLDRLog = 0;
     if (millis() - lastLDRLog > 1000) {
       Serial.println("LDR " + _id + ": " + String(reading.light) + " lux (ADC: " + String(avgValue) + ")");
@@ -274,7 +269,7 @@ SensorReading PIRSensor::read() {
   
   bool currentState = digitalRead(_pin);
   reading.motion = currentState;
-  reading.isValid = true; // Les capteurs digitaux sont toujours valides
+  reading.isValid = true; // Digital sensors are always valid
   _lastState = currentState;
   
   _lastRead = millis();
@@ -304,13 +299,13 @@ SensorReading ButtonSensor::read() {
   }
   
   if ((millis() - _lastDebounceTime) > _debounceTime) {
-    reading.pressed = !currentState; // Inverted because of INPUT_PULLUP
+    reading.pressed = !currentState; // Inverted due to INPUT_PULLUP
     _lastState = currentState;
   } else {
     reading.pressed = false;
   }
   
-  reading.isValid = true; // Les capteurs digitaux sont toujours valides
+  reading.isValid = true; // Digital sensors are always valid
   
   _lastRead = millis();
   return reading;

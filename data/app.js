@@ -1,8 +1,9 @@
-// OPENDOM PWA - Application JavaScript améliorée
+// OPENDOM PWA - Enhanced JavaScript Application
 class OpenDOMApp {
     constructor() {
         this.authenticated = false;
         this.currentUser = '';
+        this.token = '';
         this.sensors = new Map();
         this.actuators = new Map();
         this.rules = new Map();
@@ -20,12 +21,22 @@ class OpenDOMApp {
         this.initTheme();
         this.initServiceWorker();
         
-        // Check if already authenticated
-        const token = localStorage.getItem('auth_token');
-        if (token) {
+        // Check if token exists
+        const storedToken = localStorage.getItem('auth_token');
+        const storedUser = localStorage.getItem('current_user');
+        if (storedToken) {
+            this.token = storedToken;
+            this.currentUser = storedUser || 'User';
+            this.authenticated = true;
             this.showMainApp();
             this.startDataUpdates();
         }
+    }
+
+    getAuthHeaders() {
+        return {
+            'X-Auth-Token': this.token || ''
+        };
     }
 
     initEventListeners() {
@@ -35,7 +46,7 @@ class OpenDOMApp {
             this.handleLogin();
         });
 
-        // Navigation (sans surveillance)
+        // Navigation
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const section = e.currentTarget.dataset.section;
@@ -62,7 +73,7 @@ class OpenDOMApp {
         });
 
         document.getElementById('testNotificationBtn').addEventListener('click', () => {
-            this.showNotification('Test OPENDOM', 'Alerte de test avec son et vibration!');
+            this.showNotification('OPENDOM Test', 'Test notification with sound and vibration!');
         });
 
         // Tab management
@@ -185,26 +196,28 @@ class OpenDOMApp {
 
             const data = await response.json();
 
-            if (data.success) {
-                localStorage.setItem('auth_token', 'authenticated');
-                localStorage.setItem('current_user', data.user);
+            if (data.success && data.token) {
+                this.token = data.token;
                 this.currentUser = data.user;
                 this.authenticated = true;
+                localStorage.setItem('auth_token', data.token);
+                localStorage.setItem('current_user', data.user);
                 this.showMainApp();
                 this.startDataUpdates();
                 errorDiv.textContent = '';
             } else {
-                errorDiv.textContent = data.error || 'Erreur de connexion';
+                errorDiv.textContent = data.error || 'Connection error';
             }
         } catch (error) {
             console.error('Login error:', error);
-            errorDiv.textContent = 'Erreur de connexion au serveur';
+            errorDiv.textContent = 'Server connection error';
         }
     }
 
     handleLogout() {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('current_user');
+        this.token = '';
         this.authenticated = false;
         this.currentUser = '';
         this.stopDataUpdates();
@@ -217,7 +230,7 @@ class OpenDOMApp {
         document.getElementById('mainApp').classList.remove('hidden');
         this.updateProfile();
         this.loadDevices();
-        this.syncTime(); // Synchroniser l'heure après connexion
+        this.syncTime();
     }
 
     showLoginScreen() {
@@ -228,21 +241,17 @@ class OpenDOMApp {
     }
 
     showSection(sectionName) {
-        // Hide all sections
         document.querySelectorAll('.section').forEach(section => {
             section.classList.remove('active');
         });
 
-        // Show selected section
         document.getElementById(sectionName + 'Section').classList.add('active');
 
-        // Update navigation
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.remove('active');
         });
         document.querySelector(`[data-section="${sectionName}"]`).classList.add('active');
 
-        // Load section-specific data
         if (sectionName === 'home') {
             this.updateDeviceCards();
         } else if (sectionName === 'devices') {
@@ -255,19 +264,16 @@ class OpenDOMApp {
     switchTab(tabName) {
         this.activeTab = tabName;
         
-        // Update tab buttons
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.remove('active');
         });
         document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
         
-        // Update tab content
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.remove('active');
         });
         document.getElementById(tabName + 'Tab').classList.add('active');
         
-        // Load tab-specific data
         if (tabName === 'devices') {
             this.loadDevicesManagement();
         } else if (tabName === 'rules') {
@@ -285,7 +291,7 @@ class OpenDOMApp {
 
     updateProfile() {
         document.getElementById('profileName').textContent = this.currentUser;
-        document.getElementById('profileRole').textContent = 'Propriétaire';
+        document.getElementById('profileRole').textContent = 'Owner';
     }
 
     toggleTheme() {
@@ -317,15 +323,19 @@ class OpenDOMApp {
 
     async loadDevices() {
         try {
-            const response = await fetch('/api/config');
+            const response = await fetch('/api/config', {
+                headers: this.getAuthHeaders()
+            });
+            if (response.status === 401) {
+                this.handleLogout();
+                return;
+            }
             const config = await response.json();
             
-            // Clear existing devices and rules
             this.sensors.clear();
             this.actuators.clear();
             this.rules.clear();
             
-            // Store devices data
             config.devices.forEach(device => {
                 if (device.type === 'sensor') {
                     this.sensors.set(device.id, device);
@@ -334,7 +344,6 @@ class OpenDOMApp {
                 }
             });
             
-            // Store rules data
             if (config.rules) {
                 config.rules.forEach(rule => {
                     this.rules.set(rule.id, rule);
@@ -349,12 +358,15 @@ class OpenDOMApp {
 
     async updateSensorData() {
         try {
-            const response = await fetch('/api/sensors');
+            const response = await fetch('/api/sensors', {
+                headers: this.getAuthHeaders()
+            });
+            if (response.status === 401) {
+                this.handleLogout();
+                return;
+            }
             const data = await response.json();
             
-            console.log('Received sensor data:', data);
-            
-            // Marquer tous les capteurs comme déconnectés au début
             const receivedSensorIds = new Set();
             
             if (data.sensors && Array.isArray(data.sensors)) {
@@ -364,10 +376,8 @@ class OpenDOMApp {
                 });
             }
             
-            // Marquer les capteurs qui n'ont pas envoyé de données comme déconnectés
             this.sensors.forEach((sensor, sensorId) => {
                 if (!receivedSensorIds.has(sensorId)) {
-                    // Capteur déconnecté - créer une lecture invalide
                     const disconnectedReading = {
                         id: sensorId,
                         type: sensor.sensor_type,
@@ -380,7 +390,6 @@ class OpenDOMApp {
             });
         } catch (error) {
             console.error('Error updating sensor data:', error);
-            // En cas d'erreur réseau, marquer tous les capteurs comme déconnectés
             this.sensors.forEach((sensor, sensorId) => {
                 const errorReading = {
                     id: sensorId,
@@ -397,18 +406,15 @@ class OpenDOMApp {
         const sensor = this.sensors.get(sensorData.id);
         if (!sensor) return;
 
-        // Update sensor data in memory
         sensor.lastReading = sensorData;
         sensor.timestamp = sensorData.timestamp;
-        sensor.connected = sensorData.connected !== false; // Par défaut connecté si pas spécifié
+        sensor.connected = sensorData.connected !== false;
 
-        // Update UI if device card exists
         const deviceCard = document.querySelector(`[data-device-id="${sensorData.id}"]`);
         if (deviceCard) {
             this.updateDeviceCardData(deviceCard, sensorData);
         }
 
-        // Check for alerts only if sensor is connected and data is valid
         if (sensor.connected && sensorData.connected !== false) {
             this.checkSensorAlerts(sensorData);
         }
@@ -418,13 +424,11 @@ class OpenDOMApp {
         const container = document.getElementById('deviceCards');
         container.innerHTML = '';
 
-        // Create cards for sensors
         this.sensors.forEach(sensor => {
             const card = this.createSensorCard(sensor);
             container.appendChild(card);
         });
 
-        // Create cards for actuators
         this.actuators.forEach(actuator => {
             const card = this.createActuatorCard(actuator);
             container.appendChild(card);
@@ -446,11 +450,11 @@ class OpenDOMApp {
             </div>
             <div class="device-status">
                 <div class="status-indicator ${statusClass}"></div>
-                <span>${device.enabled ? 'En ligne' : 'Hors ligne'}</span>
+                <span>${device.enabled ? 'Online' : 'Offline'}</span>
             </div>
             <div class="device-data">
                 <div class="device-value" id="value-${device.id}">--</div>
-                <div class="device-unit" id="unit-${device.id}">Lecture en cours...</div>
+                <div class="device-unit" id="unit-${device.id}">Reading...</div>
             </div>
         `;
 
@@ -474,10 +478,10 @@ class OpenDOMApp {
             </div>
             <div class="device-status">
                 <div class="status-indicator ${statusClass}"></div>
-                <span>${device.enabled ? 'En ligne' : 'Hors ligne'}</span>
+                <span>${device.enabled ? 'Online' : 'Offline'}</span>
             </div>
             <div class="device-data">
-                <div class="device-value">${device.state ? 'ACTIVÉ' : 'DÉSACTIVÉ'}</div>
+                <div class="device-value">${device.state ? 'ENABLED' : 'DISABLED'}</div>
             </div>
             <div class="device-controls">
                 <button class="actuator-toggle ${toggleClass} ${dangerClass}" 
@@ -500,88 +504,85 @@ class OpenDOMApp {
 
         if (!valueElement) return;
 
-        // Vérifier l'état de connexion du capteur
         if (sensorData.connected === false || sensorData.error) {
-            // Capteur déconnecté - afficher erreur
             valueElement.textContent = '--';
-            unitElement.textContent = sensorData.error || 'Capteur déconnecté';
+            unitElement.textContent = sensorData.error || 'Sensor disconnected';
             this.updateDeviceStatus(card, 'error');
             return;
         }
 
-        // Vérifier les données selon le type de capteur
         const sensorType = sensorData.type || sensorData.sensor_type;
         
         switch (sensorType) {
             case 'DHT11':
                 if (sensorData.temperature !== undefined && sensorData.humidity !== undefined) {
                     valueElement.textContent = `${sensorData.temperature.toFixed(1)}°C`;
-                    unitElement.textContent = `Humidité: ${sensorData.humidity.toFixed(1)}%`;
+                    unitElement.textContent = `Humidity: ${sensorData.humidity.toFixed(1)}%`;
                     this.updateDeviceStatus(card, 'online');
                 } else {
                     valueElement.textContent = '--';
-                    unitElement.textContent = 'Données invalides';
+                    unitElement.textContent = 'Invalid data';
                     this.updateDeviceStatus(card, 'warning');
                 }
                 break;
             case 'MQ2':
                 if (sensorData.gas !== undefined) {
                     valueElement.textContent = sensorData.gas.toFixed(0);
-                    unitElement.textContent = 'ppm (gaz)';
+                    unitElement.textContent = 'ppm (gas)';
                     this.updateDeviceStatus(card, sensorData.gas > 400 ? 'danger' : 'online');
                 } else {
                     valueElement.textContent = '--';
-                    unitElement.textContent = 'Données invalides';
+                    unitElement.textContent = 'Invalid data';
                     this.updateDeviceStatus(card, 'warning');
                 }
                 break;
             case 'ASC':
                 if (sensorData.current !== undefined) {
                     valueElement.textContent = sensorData.current.toFixed(2);
-                    unitElement.textContent = 'A (courant)';
+                    unitElement.textContent = 'A (current)';
                     this.updateDeviceStatus(card, 'online');
                 } else {
                     valueElement.textContent = '--';
-                    unitElement.textContent = 'Données invalides';
+                    unitElement.textContent = 'Invalid data';
                     this.updateDeviceStatus(card, 'warning');
                 }
                 break;
             case 'LDR':
                 if (sensorData.light !== undefined) {
                     valueElement.textContent = sensorData.light.toFixed(0);
-                    unitElement.textContent = 'lux (luminosité)';
+                    unitElement.textContent = 'lux (light)';
                     this.updateDeviceStatus(card, 'online');
                 } else {
                     valueElement.textContent = '--';
-                    unitElement.textContent = 'Données invalides';
+                    unitElement.textContent = 'Invalid data';
                     this.updateDeviceStatus(card, 'warning');
                 }
                 break;
             case 'PIR':
                 if (sensorData.motion !== undefined) {
-                    valueElement.textContent = sensorData.motion ? 'MOUVEMENT' : 'AUCUN';
-                    unitElement.textContent = 'Détection';
+                    valueElement.textContent = sensorData.motion ? 'MOTION' : 'NONE';
+                    unitElement.textContent = 'Detection';
                     this.updateDeviceStatus(card, sensorData.motion ? 'active' : 'online');
                 } else {
                     valueElement.textContent = '--';
-                    unitElement.textContent = 'Données invalides';
+                    unitElement.textContent = 'Invalid data';
                     this.updateDeviceStatus(card, 'warning');
                 }
                 break;
             case 'BUTTON':
                 if (sensorData.pressed !== undefined) {
-                    valueElement.textContent = sensorData.pressed ? 'PRESSÉ' : 'RELÂCHÉ';
-                    unitElement.textContent = 'État du bouton';
+                    valueElement.textContent = sensorData.pressed ? 'PRESSED' : 'RELEASED';
+                    unitElement.textContent = 'Button state';
                     this.updateDeviceStatus(card, sensorData.pressed ? 'active' : 'online');
                 } else {
                     valueElement.textContent = '--';
-                    unitElement.textContent = 'Données invalides';
+                    unitElement.textContent = 'Invalid data';
                     this.updateDeviceStatus(card, 'warning');
                 }
                 break;
             default:
                 valueElement.textContent = '--';
-                unitElement.textContent = 'Type inconnu';
+                unitElement.textContent = 'Unknown type';
                 this.updateDeviceStatus(card, 'warning');
         }
     }
@@ -597,13 +598,13 @@ class OpenDOMApp {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    ...this.getAuthHeaders()
                 },
                 body: `id=${actuatorId}&action=toggle`
             });
 
             const data = await response.json();
             if (data.success) {
-                // Update actuator state in memory
                 const actuator = this.actuators.get(actuatorId);
                 if (actuator) {
                     actuator.state = data.state;
@@ -626,12 +627,12 @@ class OpenDOMApp {
 
         if (state) {
             toggle.classList.add('active');
-            valueElement.textContent = 'ACTIVÉ';
+            valueElement.textContent = 'ENABLED';
             labelElement.textContent = 'ON';
             indicator.textContent = '●';
         } else {
             toggle.classList.remove('active');
-            valueElement.textContent = 'DÉSACTIVÉ';
+            valueElement.textContent = 'DISABLED';
             labelElement.textContent = 'OFF';
             indicator.textContent = '○';
         }
@@ -639,23 +640,21 @@ class OpenDOMApp {
 
     checkSensorAlerts(reading) {
         if (reading.type === 'MQ2' && reading.gas > 400) {
-            this.showNotification('Alerte Gaz', 'Niveau critique détecté!');
+            this.showNotification('Gas Alert', 'Critical level detected!');
         } else if (reading.type === 'BUTTON' && reading.pressed) {
-            this.showNotification('Urgence', 'Bouton d\'alarme pressé!');
+            this.showNotification('Emergency', 'Emergency button pressed!');
         } else if (reading.type === 'DHT11' && reading.temperature > 35) {
-            this.showNotification('Température', 'Température élevée détectée');
+            this.showNotification('Temperature', 'High temperature detected');
         }
     }
 
     showNotification(title, body) {
         const notificationsEnabled = localStorage.getItem('notifications_enabled') === 'true';
         
-        // Vibrer le téléphone si supporté
         if ('vibrate' in navigator) {
-            navigator.vibrate([200, 100, 200]); // Pattern de vibration
+            navigator.vibrate([200, 100, 200]);
         }
         
-        // Jouer un son d'alerte
         this.playNotificationSound();
         
         if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
@@ -664,16 +663,14 @@ class OpenDOMApp {
                 icon: '/icon-192.png',
                 badge: '/icon-192.png',
                 vibrate: [200, 100, 200],
-                requireInteraction: true // Notification persistante
+                requireInteraction: true
             });
         }
         
-        // Afficher aussi une notification interne
         this.showInternalNotification(title + ': ' + body);
     }
 
     playNotificationSound() {
-        // Créer un son d'alerte synthétique
         try {
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioContext.createOscillator();
@@ -682,7 +679,6 @@ class OpenDOMApp {
             oscillator.connect(gainNode);
             gainNode.connect(audioContext.destination);
             
-            // Configuration du son d'alerte
             oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
             oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
             oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
@@ -721,17 +717,16 @@ class OpenDOMApp {
         }, 3000);
     }
 
-    // Device Management Functions
     showAddDeviceModal() {
         this.currentEditingDevice = null;
-        document.getElementById('deviceModalTitle').textContent = 'Ajouter un appareil';
+        document.getElementById('deviceModalTitle').textContent = 'Add Device';
         this.resetDeviceForm();
         document.getElementById('deviceModal').classList.add('active');
     }
 
     showEditDeviceModal(deviceId) {
         this.currentEditingDevice = deviceId;
-        document.getElementById('deviceModalTitle').textContent = 'Modifier l\'appareil';
+        document.getElementById('deviceModalTitle').textContent = 'Edit Device';
         
         const device = this.sensors.get(deviceId) || this.actuators.get(deviceId);
         if (device) {
@@ -800,7 +795,6 @@ class OpenDOMApp {
     }
 
     async saveDevice() {
-        const formData = new FormData(document.getElementById('deviceForm'));
         const deviceData = {
             id: this.currentEditingDevice || 'device_' + Date.now(),
             name: document.getElementById('deviceName').value,
@@ -818,11 +812,11 @@ class OpenDOMApp {
         }
 
         try {
-            // Get current config
-            const configResponse = await fetch('/api/config');
+            const configResponse = await fetch('/api/config', {
+                headers: this.getAuthHeaders()
+            });
             const config = await configResponse.json();
             
-            // Update or add device
             const deviceIndex = config.devices.findIndex(d => d.id === deviceData.id);
             if (deviceIndex >= 0) {
                 config.devices[deviceIndex] = deviceData;
@@ -830,27 +824,27 @@ class OpenDOMApp {
                 config.devices.push(deviceData);
             }
             
-            // Save config
             const response = await fetch('/api/config', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': 'application/json',
+                    'X-Root-Password': this.rootPassword || '',
+                    ...this.getAuthHeaders()
                 },
-                body: `root_password=${encodeURIComponent(this.rootPassword)}&` +
-                      encodeURIComponent(JSON.stringify(config))
+                body: JSON.stringify(config)
             });
 
             const result = await response.json();
             if (result.success) {
                 this.hideDeviceModal();
                 this.loadDevices();
-                this.showInternalNotification('Appareil sauvegardé avec succès');
+                this.showInternalNotification('Device saved successfully');
             } else {
-                alert('Erreur lors de la sauvegarde: ' + result.error);
+                alert('Save error: ' + result.error);
             }
         } catch (error) {
             console.error('Error saving device:', error);
-            alert('Erreur de connexion');
+            alert('Connection error');
         }
     }
 
@@ -862,7 +856,9 @@ class OpenDOMApp {
 
     async performDeleteDevice() {
         try {
-            const configResponse = await fetch('/api/config');
+            const configResponse = await fetch('/api/config', {
+                headers: this.getAuthHeaders()
+            });
             const config = await configResponse.json();
             
             config.devices = config.devices.filter(d => d.id !== this.currentEditingDevice);
@@ -870,22 +866,23 @@ class OpenDOMApp {
             const response = await fetch('/api/config', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': 'application/json',
+                    'X-Root-Password': this.rootPassword || '',
+                    ...this.getAuthHeaders()
                 },
-                body: `root_password=${encodeURIComponent(this.rootPassword)}&` +
-                      encodeURIComponent(JSON.stringify(config))
+                body: JSON.stringify(config)
             });
 
             const result = await response.json();
             if (result.success) {
                 this.loadDevices();
-                this.showInternalNotification('Appareil supprimé avec succès');
+                this.showInternalNotification('Device deleted successfully');
             } else {
-                alert('Erreur lors de la suppression: ' + result.error);
+                alert('Delete error: ' + result.error);
             }
         } catch (error) {
             console.error('Error deleting device:', error);
-            alert('Erreur de connexion');
+            alert('Connection error');
         }
     }
 
@@ -904,7 +901,7 @@ class OpenDOMApp {
         const password = document.getElementById('rootPassword').value;
         
         if (!password) {
-            document.getElementById('rootPasswordError').textContent = 'Mot de passe requis';
+            document.getElementById('rootPasswordError').textContent = 'Password required';
             return;
         }
 
@@ -929,7 +926,6 @@ class OpenDOMApp {
         const devicesList = document.getElementById('devicesList');
         devicesList.innerHTML = '';
 
-        // Combine sensors and actuators
         const allDevices = [...this.sensors.values(), ...this.actuators.values()];
 
         allDevices.forEach(device => {
@@ -938,7 +934,7 @@ class OpenDOMApp {
             
             const deviceType = device.sensor_type || device.actuator_type;
             const pinInfo = `Pin: ${device.pin}`;
-            const statusInfo = device.enabled ? 'Activé' : 'Désactivé';
+            const statusInfo = device.enabled ? 'Enabled' : 'Disabled';
             
             deviceItem.innerHTML = `
                 <div class="device-info">
@@ -966,17 +962,23 @@ class OpenDOMApp {
     }
 
     updateSystemStats() {
-        fetch('/api/system')
-            .then(response => response.json())
+        fetch('/api/system', {
+            headers: this.getAuthHeaders()
+        })
+            .then(response => {
+                if (response.status === 401) {
+                    this.handleLogout();
+                    return null;
+                }
+                return response.json();
+            })
             .then(data => {
-                console.log('System stats received:', data); // Debug
+                if (!data) return;
                 document.getElementById('freeMemory').textContent = 
                     data.freeHeap ? Math.round(data.freeHeap / 1024) + ' KB' : '--';
                 document.getElementById('cpuTemp').textContent = 
                     data.cpuTemp ? Math.round(data.cpuTemp) + '°C' : '--';
 
-                
-                // Nouveaux éléments si disponibles
                 if (document.getElementById('currentTime')) {
                     document.getElementById('currentTime').textContent = 
                         data.currentTime ? this.formatTime(data.currentTime) : '--';
@@ -1000,10 +1002,9 @@ class OpenDOMApp {
             });
     }
 
-    
     formatTime(timestamp) {
         const date = new Date(timestamp * 1000);
-        return date.toLocaleTimeString('fr-FR', { 
+        return date.toLocaleTimeString('en-US', {
             hour: '2-digit', 
             minute: '2-digit',
             second: '2-digit'
@@ -1017,31 +1018,17 @@ class OpenDOMApp {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    ...this.getAuthHeaders()
                 },
                 body: `timestamp=${timestamp}`
             });
 
             const data = await response.json();
             if (data.success) {
-                console.log('Heure synchronisée avec l\'ESP32');
+                console.log('Time synchronized with ESP32');
             }
         } catch (error) {
-            console.error('Erreur de synchronisation temporelle:', error);
-        }
-    }
-
-    formatUptime(milliseconds) {
-        const seconds = Math.floor(milliseconds / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const hours = Math.floor(minutes / 60);
-        const days = Math.floor(hours / 24);
-
-        if (days > 0) {
-            return `${days}j ${hours % 24}h`;
-        } else if (hours > 0) {
-            return `${hours}h ${minutes % 60}m`;
-        } else {
-            return `${minutes}m ${seconds % 60}s`;
+            console.error('Time synchronization error:', error);
         }
     }
 
@@ -1060,18 +1047,17 @@ class OpenDOMApp {
         return icons[deviceType] || icons['BUTTON'];
     }
 
-    // ==================== RULES MANAGEMENT ====================
-    
+    // Rules Management
     showAddRuleModal() {
         this.currentEditingRule = null;
-        document.getElementById('ruleModalTitle').textContent = 'Ajouter une règle';
+        document.getElementById('ruleModalTitle').textContent = 'Add Rule';
         this.resetRuleForm();
         document.getElementById('ruleModal').classList.add('active');
     }
 
     showEditRuleModal(ruleId) {
         this.currentEditingRule = ruleId;
-        document.getElementById('ruleModalTitle').textContent = 'Modifier la règle';
+        document.getElementById('ruleModalTitle').textContent = 'Edit Rule';
         
         const rule = this.rules.get(ruleId);
         if (rule) {
@@ -1096,15 +1082,12 @@ class OpenDOMApp {
     }
 
     populateRuleForm(rule) {
-        // Remplir les champs de base
         document.getElementById('ruleName').value = rule.name;
         document.getElementById('triggerType').value = rule.trigger_type;
         document.getElementById('ruleEnabled').checked = rule.enabled;
         
-        // Mettre à jour les sections selon le type de déclenchement
         this.updateRuleFormSections(rule.trigger_type);
         
-        // Remplir les conditions
         if (rule.conditions && rule.conditions.length > 0) {
             document.getElementById('conditionsList').innerHTML = '';
             rule.conditions.forEach(condition => {
@@ -1112,7 +1095,6 @@ class OpenDOMApp {
             });
         }
         
-        // Remplir les actions
         if (rule.actions && rule.actions.length > 0) {
             document.getElementById('actionsList').innerHTML = '';
             rule.actions.forEach(action => {
@@ -1120,12 +1102,10 @@ class OpenDOMApp {
             });
         }
         
-        // Remplir l'horaire si applicable
         if (rule.trigger_type === 'schedule' && rule.schedule) {
             document.getElementById('startTime').value = rule.schedule.start_time || '';
             document.getElementById('endTime').value = rule.schedule.end_time || '';
             
-            // Sélectionner les jours
             if (rule.schedule.days) {
                 rule.schedule.days.forEach(day => {
                     const checkbox = document.querySelector(`input[value="${day}"]`);
@@ -1140,7 +1120,6 @@ class OpenDOMApp {
         const scheduleSection = document.getElementById('scheduleSection');
         const actionsSection = document.getElementById('actionsSection');
         
-        // Hide all sections first
         conditionsSection.style.display = 'none';
         scheduleSection.style.display = 'none';
         actionsSection.style.display = 'none';
@@ -1162,41 +1141,41 @@ class OpenDOMApp {
             <div class="condition-item" data-condition-id="${conditionId}">
                 <div class="condition-row">
                     <div class="form-group">
-                        <label>Capteur</label>
+                        <label>Sensor</label>
                         <select class="condition-sensor" required onchange="app.updateParameterOptions('${conditionId}')">
-                            <option value="">Sélectionner...</option>
+                            <option value="">Select...</option>
                             ${Array.from(this.sensors.values()).map(sensor => 
                                 `<option value="${sensor.id}" data-type="${sensor.sensor_type}">${sensor.name}</option>`
                             ).join('')}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Paramètre</label>
+                        <label>Parameter</label>
                         <select class="condition-parameter" required>
-                            <option value="">Choisir un capteur d'abord</option>
+                            <option value="">Select a sensor first</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Opérateur</label>
+                        <label>Operator</label>
                         <select class="condition-operator" required>
-                            <option value="">Sélectionner...</option>
-                            <option value=">">Supérieur à</option>
-                            <option value="<">Inférieur à</option>
-                            <option value="==">Égal à</option>
-                            <option value=">=">Supérieur ou égal</option>
-                            <option value="<=">Inférieur ou égal</option>
+                            <option value="">Select...</option>
+                            <option value=">">Greater than</option>
+                            <option value="<">Less than</option>
+                            <option value="==">Equal to</option>
+                            <option value=">=">Greater than or equal</option>
+                            <option value="<=">Less than or equal</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Valeur</label>
+                        <label>Value</label>
                         <input type="number" class="condition-value" step="0.1" required>
                     </div>
                     <div class="form-group">
-                        <label>Logique</label>
+                        <label>Logic</label>
                         <select class="condition-logic">
-                            <option value="">Aucune</option>
-                            <option value="AND">ET</option>
-                            <option value="OR">OU</option>
+                            <option value="">None</option>
+                            <option value="AND">AND</option>
+                            <option value="OR">OR</option>
                         </select>
                     </div>
                     <button type="button" class="remove-btn" onclick="app.removeCondition('${conditionId}')">
@@ -1220,41 +1199,41 @@ class OpenDOMApp {
             <div class="condition-item" data-condition-id="${conditionId}">
                 <div class="condition-row">
                     <div class="form-group">
-                        <label>Capteur</label>
+                        <label>Sensor</label>
                         <select class="condition-sensor" required onchange="app.updateParameterOptions('${conditionId}')">
-                            <option value="">Sélectionner...</option>
+                            <option value="">Select...</option>
                             ${Array.from(this.sensors.values()).map(sensor => 
                                 `<option value="${sensor.id}" data-type="${sensor.sensor_type}" ${sensor.id === condition.sensor_id ? 'selected' : ''}>${sensor.name}</option>`
                             ).join('')}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Paramètre</label>
+                        <label>Parameter</label>
                         <select class="condition-parameter" required>
                             <option value="${condition.parameter}" selected>${this.getParameterDisplayName(condition.parameter)}</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Opérateur</label>
+                        <label>Operator</label>
                         <select class="condition-operator" required>
-                            <option value="">Sélectionner...</option>
-                            <option value=">" ${condition.operator === '>' ? 'selected' : ''}>Supérieur à</option>
-                            <option value="<" ${condition.operator === '<' ? 'selected' : ''}>Inférieur à</option>
-                            <option value="==" ${condition.operator === '==' ? 'selected' : ''}>Égal à</option>
-                            <option value=">=" ${condition.operator === '>=' ? 'selected' : ''}>Supérieur ou égal</option>
-                            <option value="<=" ${condition.operator === '<=' ? 'selected' : ''}>Inférieur ou égal</option>
+                            <option value="">Select...</option>
+                            <option value=">" ${condition.operator === '>' ? 'selected' : ''}>Greater than</option>
+                            <option value="<" ${condition.operator === '<' ? 'selected' : ''}>Less than</option>
+                            <option value="==" ${condition.operator === '==' ? 'selected' : ''}>Equal to</option>
+                            <option value=">=" ${condition.operator === '>=' ? 'selected' : ''}>Greater than or equal</option>
+                            <option value="<=" ${condition.operator === '<=' ? 'selected' : ''}>Less than or equal</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Valeur</label>
+                        <label>Value</label>
                         <input type="number" class="condition-value" step="0.1" value="${condition.value}" required>
                     </div>
                     <div class="form-group">
-                        <label>Logique</label>
+                        <label>Logic</label>
                         <select class="condition-logic">
-                            <option value="">Aucune</option>
-                            <option value="AND" ${condition.logic === 'AND' ? 'selected' : ''}>ET</option>
-                            <option value="OR" ${condition.logic === 'OR' ? 'selected' : ''}>OU</option>
+                            <option value="">None</option>
+                            <option value="AND" ${condition.logic === 'AND' ? 'selected' : ''}>AND</option>
+                            <option value="OR" ${condition.logic === 'OR' ? 'selected' : ''}>OR</option>
                         </select>
                     </div>
                     <button type="button" class="remove-btn" onclick="app.removeCondition('${conditionId}')">
@@ -1268,11 +1247,8 @@ class OpenDOMApp {
         `;
         
         conditionsList.insertAdjacentHTML('beforeend', conditionHtml);
-        
-        // Mettre à jour les paramètres après insertion
         this.updateParameterOptions(conditionId);
         
-        // Resélectionner le bon paramètre
         const parameterSelect = document.querySelector(`[data-condition-id="${conditionId}"] .condition-parameter`);
         if (parameterSelect) {
             parameterSelect.value = condition.parameter;
@@ -1287,9 +1263,9 @@ class OpenDOMApp {
             <div class="action-item" data-action-id="${actionId}">
                 <div class="action-row">
                     <div class="form-group">
-                        <label>Actionneur</label>
+                        <label>Actuator</label>
                         <select class="action-actuator" required>
-                            <option value="">Sélectionner...</option>
+                            <option value="">Select...</option>
                             ${Array.from(this.actuators.values()).map(actuator => 
                                 `<option value="${actuator.id}">${actuator.name}</option>`
                             ).join('')}
@@ -1298,15 +1274,15 @@ class OpenDOMApp {
                     <div class="form-group">
                         <label>Action</label>
                         <select class="action-type" required>
-                            <option value="">Sélectionner...</option>
-                            <option value="turn_on">Activer</option>
-                            <option value="turn_off">Désactiver</option>
-                            <option value="toggle">Basculer</option>
+                            <option value="">Select...</option>
+                            <option value="turn_on">Turn On</option>
+                            <option value="turn_off">Turn Off</option>
+                            <option value="toggle">Toggle</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Durée (ms)</label>
-                        <input type="number" class="action-duration" placeholder="Optionnel">
+                        <label>Duration (ms)</label>
+                        <input type="number" class="action-duration" placeholder="Optional">
                     </div>
                     <button type="button" class="remove-btn" onclick="app.removeAction('${actionId}')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1329,9 +1305,9 @@ class OpenDOMApp {
             <div class="action-item" data-action-id="${actionId}">
                 <div class="action-row">
                     <div class="form-group">
-                        <label>Actionneur</label>
+                        <label>Actuator</label>
                         <select class="action-actuator" required>
-                            <option value="">Sélectionner...</option>
+                            <option value="">Select...</option>
                             ${Array.from(this.actuators.values()).map(actuator => 
                                 `<option value="${actuator.id}" ${actuator.id === action.actuator_id ? 'selected' : ''}>${actuator.name}</option>`
                             ).join('')}
@@ -1340,15 +1316,15 @@ class OpenDOMApp {
                     <div class="form-group">
                         <label>Action</label>
                         <select class="action-type" required>
-                            <option value="">Sélectionner...</option>
-                            <option value="turn_on" ${action.action === 'turn_on' ? 'selected' : ''}>Activer</option>
-                            <option value="turn_off" ${action.action === 'turn_off' ? 'selected' : ''}>Désactiver</option>
-                            <option value="toggle" ${action.action === 'toggle' ? 'selected' : ''}>Basculer</option>
+                            <option value="">Select...</option>
+                            <option value="turn_on" ${action.action === 'turn_on' ? 'selected' : ''}>Turn On</option>
+                            <option value="turn_off" ${action.action === 'turn_off' ? 'selected' : ''}>Turn Off</option>
+                            <option value="toggle" ${action.action === 'toggle' ? 'selected' : ''}>Toggle</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Durée (ms)</label>
-                        <input type="number" class="action-duration" value="${action.duration || ''}" placeholder="Optionnel">
+                        <label>Duration (ms)</label>
+                        <input type="number" class="action-duration" value="${action.duration || ''}" placeholder="Optional">
                     </div>
                     <button type="button" class="remove-btn" onclick="app.removeAction('${actionId}')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1394,7 +1370,6 @@ class OpenDOMApp {
             trigger_type: triggerType
         };
 
-        // Collect conditions
         const conditions = [];
         document.querySelectorAll('.condition-item').forEach(item => {
             const sensorId = item.querySelector('.condition-sensor').value;
@@ -1420,7 +1395,6 @@ class OpenDOMApp {
         });
         ruleData.conditions = conditions;
 
-        // Collect actions
         const actions = [];
         document.querySelectorAll('.action-item').forEach(item => {
             const actuatorId = item.querySelector('.action-actuator').value;
@@ -1440,7 +1414,6 @@ class OpenDOMApp {
         });
         ruleData.actions = actions;
 
-        // Collect schedule if applicable
         if (triggerType === 'schedule') {
             const startTime = document.getElementById('startTime').value;
             const endTime = document.getElementById('endTime').value;
@@ -1457,11 +1430,11 @@ class OpenDOMApp {
         }
 
         try {
-            // Get current config
-            const configResponse = await fetch('/api/config');
+            const configResponse = await fetch('/api/config', {
+                headers: this.getAuthHeaders()
+            });
             const config = await configResponse.json();
             
-            // Update or add rule
             const ruleIndex = config.rules.findIndex(r => r.id === ruleData.id);
             if (ruleIndex >= 0) {
                 config.rules[ruleIndex] = ruleData;
@@ -1469,11 +1442,11 @@ class OpenDOMApp {
                 config.rules.push(ruleData);
             }
             
-            // Save config
             const response = await fetch('/api/config', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    ...this.getAuthHeaders()
                 },
                 body: `root_password=${encodeURIComponent(this.rootPassword)}&` +
                       encodeURIComponent(JSON.stringify(config))
@@ -1482,14 +1455,14 @@ class OpenDOMApp {
             const result = await response.json();
             if (result.success) {
                 this.hideRuleModal();
-                this.loadDevices(); // Reload all config
-                this.showInternalNotification('Règle sauvegardée avec succès');
+                this.loadDevices();
+                this.showInternalNotification('Rule saved successfully');
             } else {
-                alert('Erreur lors de la sauvegarde: ' + result.error);
+                alert('Save error: ' + result.error);
             }
         } catch (error) {
             console.error('Error saving rule:', error);
-            alert('Erreur de connexion');
+            alert('Connection error');
         }
     }
 
@@ -1501,7 +1474,9 @@ class OpenDOMApp {
 
     async performDeleteRule() {
         try {
-            const configResponse = await fetch('/api/config');
+            const configResponse = await fetch('/api/config', {
+                headers: this.getAuthHeaders()
+            });
             const config = await configResponse.json();
             
             config.rules = config.rules.filter(r => r.id !== this.currentEditingRule);
@@ -1510,6 +1485,7 @@ class OpenDOMApp {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    ...this.getAuthHeaders()
                 },
                 body: `root_password=${encodeURIComponent(this.rootPassword)}&` +
                       encodeURIComponent(JSON.stringify(config))
@@ -1517,14 +1493,14 @@ class OpenDOMApp {
 
             const result = await response.json();
             if (result.success) {
-                this.loadDevices(); // Reload all config
-                this.showInternalNotification('Règle supprimée avec succès');
+                this.loadDevices();
+                this.showInternalNotification('Rule deleted successfully');
             } else {
-                alert('Erreur lors de la suppression: ' + result.error);
+                alert('Delete error: ' + result.error);
             }
         } catch (error) {
             console.error('Error deleting rule:', error);
-            alert('Erreur de connexion');
+            alert('Connection error');
         }
     }
 
@@ -1542,59 +1518,44 @@ class OpenDOMApp {
             switch (sensorType) {
                 case 'DHT11':
                     parameterSelect.innerHTML = `
-                        <option value="temperature">Température</option>
-                        <option value="humidity">Humidité</option>
+                        <option value="temperature">Temperature</option>
+                        <option value="humidity">Humidity</option>
                     `;
                     break;
                 case 'MQ2':
-                    parameterSelect.innerHTML = `<option value="gas">Gaz</option>`;
+                    parameterSelect.innerHTML = `<option value="gas">Gas</option>`;
                     break;
                 case 'ASC':
-                    parameterSelect.innerHTML = `<option value="current">Courant</option>`;
+                    parameterSelect.innerHTML = `<option value="current">Current</option>`;
                     break;
                 case 'LDR':
-                    parameterSelect.innerHTML = `<option value="light">Luminosité</option>`;
+                    parameterSelect.innerHTML = `<option value="light">Luminosity</option>`;
                     break;
                 case 'PIR':
-                    parameterSelect.innerHTML = `<option value="motion">Mouvement</option>`;
+                    parameterSelect.innerHTML = `<option value="motion">Motion</option>`;
                     break;
                 case 'BUTTON':
-                    parameterSelect.innerHTML = `<option value="pressed">Appuyé</option>`;
+                    parameterSelect.innerHTML = `<option value="pressed">Pressed</option>`;
                     break;
                 default:
-                    parameterSelect.innerHTML = `<option value="value">Valeur</option>`;
+                    parameterSelect.innerHTML = `<option value="value">Value</option>`;
             }
         } else {
-            parameterSelect.innerHTML = `<option value="">Choisir un capteur d'abord</option>`;
+            parameterSelect.innerHTML = `<option value="">Select a sensor first</option>`;
         }
     }
 
     getParameterDisplayName(parameter) {
         const displayNames = {
-            'temperature': 'Température',
-            'humidity': 'Humidité',
-            'gas': 'Gaz',
-            'current': 'Courant',
-            'light': 'Luminosité',
-            'motion': 'Mouvement',
-            'pressed': 'Appuyé'
+            'temperature': 'Temperature',
+            'humidity': 'Humidity',
+            'gas': 'Gas',
+            'current': 'Current',
+            'light': 'Luminosity',
+            'motion': 'Motion',
+            'pressed': 'Pressed'
         };
         return displayNames[parameter] || parameter;
-    }
-
-    getSensorParameter(sensorId) {
-        const sensor = this.sensors.get(sensorId);
-        if (!sensor) return 'value';
-        
-        switch (sensor.sensor_type) {
-            case 'DHT11': return 'temperature';
-            case 'MQ2': return 'gas';
-            case 'ASC': return 'current';
-            case 'LDR': return 'light';
-            case 'PIR': return 'motion';
-            case 'BUTTON': return 'pressed';
-            default: return 'value';
-        }
     }
 
     loadRulesManagement() {
@@ -1606,7 +1567,7 @@ class OpenDOMApp {
             ruleItem.className = 'device-item';
             
             const triggerTypeText = this.getTriggerTypeText(rule.trigger_type);
-            const statusText = rule.enabled ? 'Activée' : 'Désactivée';
+            const statusText = rule.enabled ? 'Enabled' : 'Disabled';
             const conditionsCount = rule.conditions ? rule.conditions.length : 0;
             const actionsCount = rule.actions ? rule.actions.length : 0;
             
@@ -1637,10 +1598,10 @@ class OpenDOMApp {
 
     getTriggerTypeText(triggerType) {
         const types = {
-            'sensor_threshold': 'Seuil de capteur',
-            'sensor_combination': 'Combinaison de capteurs',
-            'schedule': 'Horaire programmé',
-            'critical_event': 'Événement critique'
+            'sensor_threshold': 'Sensor Threshold',
+            'sensor_combination': 'Sensor Combination',
+            'schedule': 'Scheduled Time',
+            'critical_event': 'Critical Event'
         };
         return types[triggerType] || triggerType;
     }
@@ -1650,7 +1611,7 @@ class OpenDOMApp {
             if (this.authenticated) {
                 this.updateSensorData();
             }
-        }, 2000); // Update every 2 seconds
+        }, 2000);
     }
 
     stopDataUpdates() {
@@ -1661,16 +1622,13 @@ class OpenDOMApp {
     }
 }
 
-// Global variable for app instance
 let app;
 
-// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     app = new OpenDOMApp();
     window.startTime = Date.now();
 });
 
-// Add CSS for internal notifications
 const style = document.createElement('style');
 style.textContent = `
 @keyframes slideIn {

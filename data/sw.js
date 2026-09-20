@@ -118,12 +118,12 @@ self.addEventListener('push', (event) => {
     actions: [
       {
         action: 'view',
-        title: 'Voir',
+        title: 'View',
         icon: '/icon-192.png'
       },
       {
         action: 'dismiss',
-        title: 'Ignorer',
+        title: 'Dismiss',
         icon: '/icon-192.png'
       }
     ]
@@ -139,15 +139,12 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   if (event.action === 'view') {
-    // Open the app
     event.waitUntil(
       clients.openWindow('/')
     );
   } else if (event.action === 'dismiss') {
-    // Just close the notification
     return;
   } else {
-    // Default action - open the app
     event.waitUntil(
       clients.openWindow('/')
     );
@@ -158,7 +155,6 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('sync', (event) => {
   if (event.tag === 'background-sync') {
     event.waitUntil(
-      // Perform background operations
       console.log('Background sync triggered')
     );
   }

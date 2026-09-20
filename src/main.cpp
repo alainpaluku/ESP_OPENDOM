@@ -24,8 +24,10 @@ std::vector<BaseActuator*> actuators;
 StatusLED statusLED(25, 26, 27); // Rouge=25, Vert=26, Bleu=27
 
 // System state
-bool authenticated = false;
+String authToken = "";
 String currentUser = "";
+unsigned long tokenTimestamp = 0;
+const unsigned long TOKEN_TIMEOUT_MS = 24 * 3600 * 1000; // 24 hours
 unsigned long lastSensorRead = 0;
 const unsigned long sensorReadInterval = 1000;
 unsigned long lastDiagnostics = 0;
@@ -190,8 +192,22 @@ void printDiagnostics() {
   Serial.println("==========================\n");
 }
 
+void clearDevices() {
+  for (auto* sensor : sensors) {
+    delete sensor;
+  }
+  sensors.clear();
+
+  for (auto* actuator : actuators) {
+    delete actuator;
+  }
+  actuators.clear();
+  latestReadings.clear();
+}
+
 void initDevices() {
   Serial.println("Initializing devices...");
+  clearDevices();
   
   // Initialize sensors
   for (const auto& deviceConfig : config.devices) {
@@ -241,6 +257,10 @@ void initDevices() {
 }
 
 void initWebServer() {
+  const char * headerkeys[] = {"X-Auth-Token", "X-Root-Password"} ;
+  size_t headerkeyssize = sizeof(headerkeys)/sizeof(char*);
+  server.collectHeaders(headerkeys, headerkeyssize);
+
   // Serve static files
   server.on("/", handleRoot);
   server.on("/login", HTTP_POST, handleLogin);
@@ -274,9 +294,12 @@ void handleLogin() {
     String password = server.arg("password");
     
     if (username == config.system.auth.username && password == config.system.auth.password) {
-      authenticated = true;
+      // Generate pseudo-random session token
+      authToken = String(random(100000, 999999)) + String(micros()) + String(ESP.getFreeHeap());
       currentUser = username;
-      server.send(200, "application/json", "{\"success\":true,\"user\":\"" + username + "\"}");
+      tokenTimestamp = millis();
+
+      server.send(200, "application/json", "{\"success\":true,\"user\":\"" + username + "\",\"token\":\"" + authToken + "\"}");
     } else {
       server.send(401, "application/json", "{\"success\":false,\"error\":\"Invalid credentials\"}");
     }
@@ -380,19 +403,31 @@ void handleConfig() {
     }
   } else if (server.method() == HTTP_POST) {
     // Update configuration (requires root password)
-    if (!server.hasArg("root_password")) {
-      server.send(401, "application/json", "{\"error\":\"Root password required\"}");
-      return;
+    String rootPassword = "";
+    if (server.hasHeader("X-Root-Password")) {
+      rootPassword = server.header("X-Root-Password");
+    } else if (server.hasArg("root_password")) {
+      rootPassword = server.arg("root_password");
     }
-    
-    String rootPassword = server.arg("root_password");
-    if (rootPassword != config.system.auth.rootPassword) {
-      server.send(401, "application/json", "{\"error\":\"Invalid root password\"}");
+
+    if (rootPassword.isEmpty() || rootPassword != config.system.auth.rootPassword) {
+      server.send(401, "application/json", "{\"error\":\"Invalid or missing root password\"}");
       return;
     }
     
     // Save new configuration
     String body = server.arg("plain");
+    if (body.isEmpty() || body.length() > 16384) {
+      server.send(400, "application/json", "{\"error\":\"Invalid or oversized configuration body\"}");
+      return;
+    }
+    JsonDocument checkDoc;
+    DeserializationError err = deserializeJson(checkDoc, body);
+    if (err) {
+      server.send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+      return;
+    }
+
     File file = SPIFFS.open("/configuration.json", "w");
     if (file) {
       file.print(body);
@@ -669,10 +704,25 @@ String getContentType(String filename) {
 }
 
 bool checkAuthentication() {
-  if (!authenticated) {
+  String reqToken = "";
+  if (server.hasHeader("X-Auth-Token")) {
+    reqToken = server.header("X-Auth-Token");
+  } else if (server.hasArg("token")) {
+    reqToken = server.arg("token");
+  }
+
+  if (authToken.isEmpty() || reqToken.isEmpty() || reqToken != authToken) {
     server.send(401, "application/json", "{\"error\":\"Authentication required\"}");
     return false;
   }
+
+  // Token timeout check
+  if (millis() - tokenTimestamp > TOKEN_TIMEOUT_MS) {
+    authToken = "";
+    server.send(401, "application/json", "{\"error\":\"Session expired\"}");
+    return false;
+  }
+
   return true;
 }
 
